@@ -19,6 +19,7 @@
 #include "json/json_spirit_reader_template.h"
 #include "json/json_spirit_utils.h"
 #include "json/json_spirit_writer_template.h"
+#include "univalue/univalue.h"
 
 class CBlockIndex;
 class CNetAddr;
@@ -260,6 +261,7 @@ extern json_spirit::Value getpoolinfo(const json_spirit::Array& params, bool fHe
 extern json_spirit::Value masternode(const json_spirit::Array& params, bool fHelp);
 extern json_spirit::Value listmasternodes(const json_spirit::Array& params, bool fHelp);
 extern json_spirit::Value getmasternodecount(const json_spirit::Array& params, bool fHelp);
+extern json_spirit::Value masternodebroadcast(const json_spirit::Array& params, bool fHelp);
 extern json_spirit::Value masternodeconnect(const json_spirit::Array& params, bool fHelp);
 extern json_spirit::Value masternodecurrent(const json_spirit::Array& params, bool fHelp);
 extern json_spirit::Value masternodedebug(const json_spirit::Array& params, bool fHelp);

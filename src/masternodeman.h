@@ -153,8 +153,11 @@ public:
 
     void Remove(CTxIn vin);
 
+    int GetEstimatedMasternodes(int nBlock);
+
     /// Update masternode list and maps using provided CMasternodeBroadcast
     void UpdateMasternodeList(CMasternodeBroadcast mnb);
+
 };
 
 #endif
