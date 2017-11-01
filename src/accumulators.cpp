@@ -32,6 +32,30 @@ uint32_t GetChecksum(const CBigNum &bnValue)
     return hash.Get32();
 }
 
+// Find the first occurance of a certain accumulator checksum. Return 0 if not found.
+int GetChecksumHeight(uint32_t nChecksum, CoinDenomination denomination)
+{
+    CBlockIndex* pindex = chainActive[Params().Zerocoin_StartHeight()];
+    if (!pindex)
+        return 0;
+
+    //Search through blocks to find the checksum
+    while (pindex) {
+        if (ParseChecksum(pindex->nAccumulatorCheckpoint, denomination) == nChecksum)
+            return pindex->nHeight;
+
+        //Skip forward in groups of 10 blocks since checkpoints only change every 10 blocks
+        if (pindex->nHeight % 10 == 0) {
+            pindex = chainActive[pindex->nHeight + 10];
+            continue;
+        }
+
+        pindex = chainActive.Next(pindex);
+    }
+
+    return 0;
+}
+
 bool GetAccumulatorValueFromChecksum(uint32_t nChecksum, bool fMemoryOnly, CBigNum& bnAccValue)
 {
     if (mapAccumulatorValues.count(nChecksum)) {
