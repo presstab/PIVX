@@ -33,6 +33,7 @@
 
 #include "primitives/zerocoin.h"
 #include "libzerocoin/Denominations.h"
+#include "blocksignature.h"
 
 #include <sstream>
 
@@ -1254,7 +1255,7 @@ bool BlockToZerocoinMintList(const CBlock& block, std::list<CZerocoinMint>& vMin
             if(!TxOutToPublicCoin(txOut, pubCoin, state))
                 return false;
 
-            CZerocoinMint mint = CZerocoinMint(pubCoin.getDenomination(), pubCoin.getValue(), 0, 0, false);
+            CZerocoinMint mint = CZerocoinMint(pubCoin.getDenomination(), pubCoin.getValue(), 0, 0, false, 1, nullptr);
             mint.SetTxHash(tx.GetHash());
             vMints.push_back(mint);
         }
@@ -1335,17 +1336,24 @@ CoinSpend TxInToZerocoinSpend(const CTxIn& txin)
     dataTxIn.insert(dataTxIn.end(), txin.scriptSig.begin() + BIGNUM_SIZE, txin.scriptSig.end());
 
     CDataStream serializedCoinSpend(dataTxIn, SER_NETWORK, PROTOCOL_VERSION);
-    return CoinSpend(Params().Zerocoin_Params(), serializedCoinSpend);
+
+    // Use prevout.n to encode a version number. This provides a simple way to add a version when this was previously
+    // not included in zerocoin spends.
+    uint8_t nVersion = 1;
+    if (!txin.prevout.IsNull())
+        nVersion = static_cast<uint8_t>(txin.prevout.n);
+
+    return CoinSpend(Params().Zerocoin_Params(), nVersion, serializedCoinSpend);
 }
 
 bool IsZerocoinSpendUnknown(CoinSpend coinSpend, uint256 hashTx, CValidationState& state)
 {
-    uint256 hashTxFromDB;
-    if(zerocoinDB->ReadCoinSpend(coinSpend.getCoinSerialNumber(), hashTxFromDB))
-        return hashTx == hashTxFromDB;
-
-    if(!zerocoinDB->WriteCoinSpend(coinSpend.getCoinSerialNumber(), hashTx))
-        return state.DoS(100, error("CheckZerocoinSpend(): Failed to write zerocoin mint to database"));
+//    uint256 hashTxFromDB;
+//    if(zerocoinDB->ReadCoinSpend(coinSpend.getCoinSerialNumber(), hashTxFromDB))
+//        return hashTx == hashTxFromDB;
+//
+//    if(!zerocoinDB->WriteCoinSpend(coinSpend.getCoinSerialNumber(), hashTx))
+//        return state.DoS(100, error("CheckZerocoinSpend(): Failed to write zerocoin mint to database"));
 
     return true;
 }
@@ -1360,7 +1368,7 @@ bool CheckZerocoinSpend(const CTransaction tx, bool fVerifySignature, CValidatio
                 continue;
             outs++;
         }
-        if (outs > 2)
+        if (outs > 2 && !tx.IsCoinStake())
             return state.DoS(100, error("CheckZerocoinSpend(): over two non-mint outputs in a zerocoinspend transaction"));
     }
 
@@ -1419,7 +1427,7 @@ bool CheckZerocoinSpend(const CTransaction tx, bool fVerifySignature, CValidatio
         fValidated = true;
     }
 
-    if (nTotalRedeemed < tx.GetValueOut()) {
+    if (!tx.IsCoinStake() && nTotalRedeemed < tx.GetValueOut()) {
         LogPrintf("redeemed = %s , spend = %s \n", FormatMoney(nTotalRedeemed), FormatMoney(tx.GetValueOut()));
         return state.DoS(100, error("Transaction spend more than was redeemed in zerocoins"));
     }
@@ -4903,16 +4911,9 @@ bool ProcessNewBlock(CValidationState& state, CNode* pfrom, CBlock* pblock, CDis
     if (nMints || nSpends)
         LogPrintf("%s : block contains %d zPiv mints and %d zPiv spends\n", __func__, nMints, nSpends);
 
-    // ppcoin: check proof-of-stake
-    // Limited duplicity on stake: prevents block flood attack
-    // Duplicate stake allowed only when there is orphan child block
-    //if (pblock->IsProofOfStake() && setStakeSeen.count(pblock->GetProofOfStake())/* && !mapOrphanBlocksByPrev.count(hash)*/)
-    //    return error("ProcessNewBlock() : duplicate proof-of-stake (%s, %d) for block %s", pblock->GetProofOfStake().first.ToString().c_str(), pblock->GetProofOfStake().second, pblock->GetHash().ToString().c_str());
-
-    // NovaCoin: check proof-of-stake block signature
-    if (!pblock->CheckBlockSignature())
+    if (!CheckBlockSignature(*pblock))
         return error("ProcessNewBlock() : bad proof-of-stake block signature");
-
+    LogPrintf("%s 4916\n", __func__);
     if (pblock->GetHash() != Params().HashGenesisBlock() && pfrom != NULL) {
         //if we get this far, check if the prev block is our prev block, if not then request sync and return false
         BlockMap::iterator mi = mapBlockIndex.find(pblock->hashPrevBlock);

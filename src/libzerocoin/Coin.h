@@ -18,6 +18,8 @@
 #include "amount.h"
 #include "bignum.h"
 #include "util.h"
+#include "../key.h"
+
 namespace libzerocoin
 {
 /** A Public coin is the part of a coin that
@@ -97,10 +99,16 @@ public:
     // @return the coins serial number
     const CBigNum& getSerialNumber() const { return this->serialNumber; }
     const CBigNum& getRandomness() const { return this->randomness; }
+    const CPrivKey& getPrivKey() const { return this->privkey; }
+    const CPubKey getPubKey() const;
+    const uint8_t& getVersion() const { return this->version; }
 
     void setPublicCoin(PublicCoin p) { publicCoin = p; }
     void setRandomness(Bignum n) { randomness = n; }
     void setSerialNumber(Bignum n) { serialNumber = n; }
+    void setVersion(uint8_t nVersion) { this->version = nVersion; }
+    void setPrivKey(const CPrivKey& privkey) { this->privkey = privkey; }
+    bool sign(const uint256& hash, std::vector<unsigned char>& vchSig) const;
 
     ADD_SERIALIZE_METHODS;
     template <typename Stream, typename Operation>
@@ -109,6 +117,10 @@ public:
         READWRITE(publicCoin);
         READWRITE(randomness);
         READWRITE(serialNumber);
+        if (version == 2) {
+            READWRITE(version);
+            READWRITE(privkey);
+        }
     }
 
 private:
@@ -116,6 +128,8 @@ private:
     PublicCoin publicCoin;
     CBigNum randomness;
     CBigNum serialNumber;
+    uint8_t version = 0;
+    CPrivKey privkey;
 
     /**
 	 * @brief Mint a new coin.

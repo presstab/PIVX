@@ -3,6 +3,28 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include "primitives/zerocoin.h"
+#include "../key.h"
+#include "../util.h"
+#include "../tinyformat.h"
+#include "zerocoin.h"
+#include "../utilstrencodings.h"
+
+bool CZerocoinMint::GetKeyPair(CKey &key) const
+{
+    if (version < 2)
+        return error("%s: version is %d", __func__, version);
+
+    if (privkey.empty())
+        return error("%s: empty privkey %s", __func__, privkey.data());
+
+    return key.SetPrivKey(privkey, true);
+}
+
+std::string CZerocoinMint::ToString() const
+{
+    std::string str = strprintf("version=%d randomness: %s \n serial %s \n privkey %s\n", version, randomness.GetHex(), serialNumber.GetHex(), HexStr(privkey));
+    return str;
+}
 
 void CZerocoinSpendReceipt::AddSpend(const CZerocoinSpend& spend)
 {

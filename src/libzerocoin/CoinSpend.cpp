@@ -14,12 +14,16 @@
 #include <iostream>
 namespace libzerocoin
 {
-CoinSpend::CoinSpend(const ZerocoinParams* p, const PrivateCoin& coin, Accumulator& a, const uint32_t checksum, const AccumulatorWitness& witness, const uint256& ptxHash) : accChecksum(checksum),
-                                                                                                                                                                             ptxHash(ptxHash),
-                                                                                                                                                                             coinSerialNumber((coin.getSerialNumber())),
-                                                                                                                                                                             accumulatorPoK(&p->accumulatorParams),
-                                                                                                                                                                             serialNumberSoK(p),
-                                                                                                                                                                             commitmentPoK(&p->serialNumberSoKCommitmentGroup, &p->accumulatorParams.accumulatorPoKCommitmentGroup)
+
+CoinSpend::CoinSpend(const ZerocoinParams* p, const PrivateCoin& coin, Accumulator& a, const uint32_t checksum,
+                     const AccumulatorWitness& witness, const uint256& ptxHash, uint8_t nVersion) : accChecksum(checksum),
+                                                                                  ptxHash(ptxHash),
+                                                                                  coinSerialNumber((coin.getSerialNumber())),
+                                                                                  accumulatorPoK(&p->accumulatorParams),
+                                                                                  serialNumberSoK(p),
+                                                                                  commitmentPoK(&p->serialNumberSoKCommitmentGroup,
+                                                                                                &p->accumulatorParams.accumulatorPoKCommitmentGroup),
+                                                                                  version(nVersion)
 {
     denomination = coin.getPublicCoin().getDenomination();
     // Sanity check: let's verify that the Witness is valid with respect to
@@ -51,7 +55,16 @@ CoinSpend::CoinSpend(const ZerocoinParams* p, const PrivateCoin& coin, Accumulat
 
     // 4. Proves that the coin is correct w.r.t. serial number and hidden coin secret
     // (This proof is bound to the coin 'metadata', i.e., transaction hash)
+    uint256 hashSig = signatureHash();
     this->serialNumberSoK = SerialNumberSignatureOfKnowledge(p, coin, fullCommitmentToCoinUnderSerialParams, signatureHash());
+
+    // 5. Sign the transaction using the private key associated with the serial number
+    if (version >= 2) {
+        this->pubkey = coin.getPubKey();
+        if (!coin.sign(hashSig, this->vchSig))
+            throw std::runtime_error("Coinspend failed to sign signature hash");
+        LogPrintf("***Signed hash\n");
+    }
 }
 
 bool CoinSpend::Verify(const Accumulator& a) const

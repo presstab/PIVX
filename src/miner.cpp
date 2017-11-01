@@ -24,6 +24,7 @@
 #include "masternode-payments.h"
 #include "accumulators.h"
 #include "spork.h"
+#include "blocksignature.h"
 
 #include <boost/thread.hpp>
 #include <boost/tuple/tuple.hpp>
@@ -454,7 +455,7 @@ void IncrementExtraNonce(CBlock* pblock, CBlockIndex* pindexPrev, unsigned int& 
     pblock->hashMerkleRoot = pblock->BuildMerkleTree();
 }
 
-#ifdef ENABLE_WALLET
+
 //////////////////////////////////////////////////////////////////////////////
 //
 // Internal miner
@@ -536,7 +537,7 @@ void BitcoinMiner(CWallet* pwallet, bool fProofOfStake)
                 continue;
             }
 
-            while (chainActive.Tip()->nTime < 1471482000 || vNodes.empty() || pwallet->IsLocked() || !fMintableCoins || nReserveBalance >= pwallet->GetBalance() || !masternodeSync.IsSynced()) {
+            while (IsInitialBlockDownload() || pwallet->IsLocked() || !fMintableCoins || nReserveBalance >= pwallet->GetBalance()){ //|| !masternodeSync.IsSynced()) {
                 nLastCoinStakeSearchInterval = 0;
                 MilliSleep(5000);
                 if (!fGenerateBitcoins && !fProofOfStake)
@@ -571,9 +572,24 @@ void BitcoinMiner(CWallet* pwallet, bool fProofOfStake)
         //Stake miner main
         if (fProofOfStake) {
             LogPrintf("CPUMiner : proof-of-stake block found %s \n", pblock->GetHash().ToString().c_str());
+            if (pblock->IsZerocoinStake()) {
+                //Find the key associated with the zerocoin that is being staked
+                libzerocoin::CoinSpend spend = TxInToZerocoinSpend(pblock->vtx[1].vin[0]);
+                CBigNum bnSerial = spend.getCoinSerialNumber();
+                CKey key;
+                if (!pwallet->GetZerocoinKey(bnSerial, key)) {
+                    LogPrintf("%s: failed to find zPIV with serial %s, unable to sign block\n", __func__, bnSerial.GetHex());
+                    continue;
+                }
 
-            if (!pblock->SignBlock(*pwallet)) {
-                LogPrintf("BitcoinMiner(): Signing new block failed \n");
+                //Sign block with the zPIV key
+                if (!SignBlockWithKey(*pblock, key)) {
+                    LogPrintf("BitcoinMiner(): Signing new block with zPIV key failed \n");
+                    continue;
+                }
+                LogPrintf("%s: signed block with zpiv key!", __func__);
+            } else if (!SignBlock(*pblock, *pwallet)) {
+                LogPrintf("BitcoinMiner(): Signing new block with UTXO key failed \n");
                 continue;
             }
 
@@ -709,4 +725,3 @@ void GenerateBitcoins(bool fGenerate, CWallet* pwallet, int nThreads)
         minerThreads->create_thread(boost::bind(&ThreadBitcoinMiner, pwallet));
 }
 
-#endif // ENABLE_WALLET

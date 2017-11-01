@@ -188,7 +188,7 @@ private:
 
 public:
     bool MintableCoins();
-    bool SelectStakeCoins(std::set<std::pair<const CWalletTx*, unsigned int> >& setCoins, CAmount nTargetAmount) const;
+    bool SelectStakeCoins(std::list<CStakeInput*>& listInputs, CAmount nTargetAmount) const;
     bool SelectCoinsDark(CAmount nValueMin, CAmount nValueMax, std::vector<CTxIn>& setCoinsRet, CAmount& nValueRet, int nObfuscationRoundsMin, int nObfuscationRoundsMax) const;
     bool SelectCoinsByDenominations(int nDenom, CAmount nValueMin, CAmount nValueMax, std::vector<CTxIn>& vCoinsRet, std::vector<COutput>& vCoinsRet2, CAmount& nValueRet, int nObfuscationRoundsMin, int nObfuscationRoundsMax);
     bool SelectCoinsDarkDenominated(CAmount nTargetValue, std::vector<CTxIn>& setCoinsRet, CAmount& nValueRet) const;
@@ -208,6 +208,7 @@ public:
     std::string ResetSpentZerocoin();
     void ReconsiderZerocoins(std::list<CZerocoinMint>& listMintsRestored);
     void ZPivBackupWallet();
+    bool GetZerocoinKey(const CBigNum& bnSerial, CKey& key);
 
     /** Zerocin entry changed.
     * @note called with lock cs_wallet held.

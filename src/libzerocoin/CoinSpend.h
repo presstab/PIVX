@@ -14,6 +14,7 @@
 #ifndef COINSPEND_H_
 #define COINSPEND_H_
 
+#include <iostream>
 #include "Accumulator.h"
 #include "AccumulatorProofOfKnowledge.h"
 #include "Coin.h"
@@ -22,6 +23,7 @@
 #include "SerialNumberSignatureOfKnowledge.h"
 #include "bignum.h"
 #include "serialize.h"
+#include "../pubkey.h"
 
 namespace libzerocoin
 {
@@ -33,9 +35,9 @@ class CoinSpend
 {
 public:
     template <typename Stream>
-    CoinSpend(const ZerocoinParams* p, Stream& strm) : accumulatorPoK(&p->accumulatorParams),
+    CoinSpend(const ZerocoinParams* p, uint8_t nVersion, Stream& strm) : accumulatorPoK(&p->accumulatorParams),
                                                        serialNumberSoK(p),
-                                                       commitmentPoK(&p->serialNumberSoKCommitmentGroup, &p->accumulatorParams.accumulatorPoKCommitmentGroup)
+                                                       commitmentPoK(&p->serialNumberSoKCommitmentGroup, &p->accumulatorParams.accumulatorPoKCommitmentGroup), version(nVersion)
     {
         strm >> *this;
     }
@@ -62,7 +64,8 @@ public:
 	 * @param a hash of the partial transaction that contains this coin spend
 	 * @throw ZerocoinException if the process fails
 	 */
-    CoinSpend(const ZerocoinParams* p, const PrivateCoin& coin, Accumulator& a, const uint32_t checksum, const AccumulatorWitness& witness, const uint256& ptxHash);
+    CoinSpend(const ZerocoinParams* p, const PrivateCoin& coin, Accumulator& a, const uint32_t checksum,
+              const AccumulatorWitness& witness, const uint256& ptxHash, const uint8_t nVersion);
 
     /** Returns the serial number of the coin spend by this proof.
 	 *
@@ -89,6 +92,9 @@ public:
     uint256 getTxOutHash() const { return ptxHash; }
     CBigNum getAccCommitment() const { return accCommitmentToCoinValue; }
     CBigNum getSerialComm() const { return serialCommitmentToCoinValue; }
+    uint8_t getVersion() const { return version; }
+    CPubKey getPubKey() const { return pubkey; }
+    std::vector<unsigned char> getSignature() const { return vchSig; }
 
     bool Verify(const Accumulator& a) const;
     bool HasValidSerial(ZerocoinParams* params) const;
@@ -107,6 +113,10 @@ public:
         READWRITE(accumulatorPoK);
         READWRITE(serialNumberSoK);
         READWRITE(commitmentPoK);
+        if (version >= 2) {
+            READWRITE(pubkey);
+            READWRITE(vchSig);
+        }
     }
 
 private:
@@ -120,6 +130,11 @@ private:
     AccumulatorProofOfKnowledge accumulatorPoK;
     SerialNumberSignatureOfKnowledge serialNumberSoK;
     CommitmentProofOfKnowledge commitmentPoK;
+    uint8_t version;
+
+    //As of version 2
+    CPubKey pubkey;
+    std::vector<unsigned char> vchSig;
 };
 
 } /* namespace libzerocoin */
