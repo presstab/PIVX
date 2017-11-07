@@ -252,6 +252,9 @@ public:
     bool fCombineDust;
     CAmount nAutoCombineThreshold;
 
+    //zPiv
+    CBitcoinAddress zPivSeedAddress;
+
     CWallet()
     {
         SetNull();
@@ -302,6 +305,9 @@ public:
         //Auto Combine Dust
         fCombineDust = false;
         nAutoCombineThreshold = 0;
+
+        //zPiv
+        zPivSeedAddress = NULL;
     }
 
     bool isZeromintEnabled()
@@ -313,6 +319,9 @@ public:
     {
         fBackupMints = fEnabled;
     }
+
+    bool SetZPivSeedAddress(CBitcoinAddress address);
+    CBitcoinAddress GetZPivSeedAddress() { return zPivSeedAddress; }
     
     bool isMultiSendEnabled()
     {

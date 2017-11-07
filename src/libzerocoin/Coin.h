@@ -93,6 +93,7 @@ public:
         strm >> *this;
     }
     PrivateCoin(const ZerocoinParams* p, const CoinDenomination denomination);
+    PrivateCoin(const ZerocoinParams* p, const CoinDenomination denomination, const CBigNum& bnSerial, const CBigNum& bnRandomness);
     const PublicCoin& getPublicCoin() const { return this->publicCoin; }
     // @return the coins serial number
     const CBigNum& getSerialNumber() const { return this->serialNumber; }

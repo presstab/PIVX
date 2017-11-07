@@ -65,6 +65,20 @@ PrivateCoin::PrivateCoin(const ZerocoinParams* p, const CoinDenomination denomin
 	
 }
 
+PrivateCoin::PrivateCoin(const ZerocoinParams* p, const CoinDenomination denomination, const CBigNum& bnSerial, const CBigNum& bnRandomness) {
+    params = p;
+    // Verify that the parameters are valid
+    if(!this->params->initialized) {
+        throw std::runtime_error("Params are not initialized");
+    }
+
+    this->serialNumber = bnSerial;
+    this->randomness = bnRandomness;
+
+    Commitment commitment(p->coinCommitmentGroup, bnSerial, bnRandomness);
+    this->publicCoin = PublicCoin(p, commitment.getCommitmentValue(), denom);
+}
+
 void PrivateCoin::mintCoin(const CoinDenomination denomination) {
 	// Repeat this process up to MAX_COINMINT_ATTEMPTS times until
 	// we obtain a prime number
