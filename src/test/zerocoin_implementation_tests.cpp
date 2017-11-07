@@ -10,6 +10,7 @@
 #include <boost/test/unit_test.hpp>
 #include <iostream>
 #include <accumulators.h>
+#include "zpivwallet.h"
 
 using namespace libzerocoin;
 
@@ -346,6 +347,41 @@ BOOST_AUTO_TEST_CASE(checksum_tests)
         BOOST_CHECK_MESSAGE(checksumParsed == vChecksums[i], "checksum parse failed");
         i++;
     }
+}
+
+BOOST_AUTO_TEST_CASE(deterministic_tests)
+{
+    cout << "Testing deterministic minting\n";
+    uint256 seedMaster("3a1947364362e2e7c073b386869c89c905c0cf462448ffd6c2021bd03ce689f6");
+    CzPIVWallet zWallet(seedMaster);
+
+    int64_t nTimeStart = GetTimeMillis();
+    CoinDenomination denom = CoinDenomination::ZQ_FIFTY;
+
+    std::vector<PrivateCoin> vCoins;
+    for (int i = 0; i < 100; i++) {
+        PrivateCoin coin(Params().Zerocoin_Params(), denom, false);
+        BOOST_CHECK_MESSAGE(zWallet.GenerateDeterministicZPiv(denom, coin), "failed to generate mint");
+        cout << "Generated " << (i+1) << " mints" << endl;
+        vCoins.emplace_back(coin);
+    }
+
+    int64_t nTotalTime = GetTimeMillis() - nTimeStart;
+    cout << "Total time:" << nTotalTime << "ms. Per Deterministic Mint:" << (nTotalTime/100) << "ms" << endl;
+
+    cout << "Checking that mints are valid" << endl;
+    CDataStream ss(SER_GETHASH, 0);
+    for (PrivateCoin coin : vCoins) {
+        BOOST_CHECK_MESSAGE(coin.IsValid(), "Generated Mint is not valid");
+        ss << coin.getPublicCoin().getValue();
+
+    }
+
+    cout << "Checking that mints are deterministic: sha256 checksum=";
+    uint256 hash = Hash(ss.begin(), ss.end());
+    cout << hash.GetHex() << endl;
+    BOOST_CHECK_MESSAGE(hash == uint256("c3f9d07fdadcd80394f5e53b79d823bfb4caf6920846c44cf06c54166e18f930"), "minting determinism isn't as expected");
+
 }
 
 

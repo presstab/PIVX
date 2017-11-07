@@ -20,6 +20,7 @@
 #include "crypto/sph_jh.h"
 #include "crypto/sph_keccak.h"
 #include "crypto/sph_skein.h"
+#include "crypto/sha512.h"
 
 #include <iomanip>
 #include <openssl/sha.h>
@@ -51,6 +52,34 @@ public:
     }
 
     CHash256& Reset()
+    {
+        sha.Reset();
+        return *this;
+    }
+};
+
+class CHash512
+{
+private:
+    CSHA512 sha;
+
+public:
+    static const size_t OUTPUT_SIZE = CSHA512::OUTPUT_SIZE;
+
+    void Finalize(unsigned char hash[OUTPUT_SIZE])
+    {
+        unsigned char buf[sha.OUTPUT_SIZE];
+        sha.Finalize(buf);
+        sha.Reset().Write(buf, sha.OUTPUT_SIZE).Finalize(hash);
+    }
+
+    CHash512& Write(const unsigned char* data, size_t len)
+    {
+        sha.Write(data, len);
+        return *this;
+    }
+
+    CHash512& Reset()
     {
         sha.Reset();
         return *this;
@@ -139,6 +168,16 @@ inline void Hash(void* in, unsigned int len, unsigned char* out)
     SHA256_Init(&sha256);
     SHA256_Update(&sha256, in, len);
     SHA256_Final(out, &sha256);
+}
+
+/** Compute the 256-bit hash of an object. */
+template <typename T1>
+inline uint512 Hash512(const T1 pbegin, const T1 pend)
+{
+    static const unsigned char pblank[1] = {};
+    uint512 result;
+    CHash512().Write(pbegin == pend ? pblank : (const unsigned char*)&pbegin[0], (pend - pbegin) * sizeof(pbegin[0])).Finalize((unsigned char*)&result);
+    return result;
 }
 
 /** Compute the 256-bit hash of an object. */
