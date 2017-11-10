@@ -1656,11 +1656,17 @@ bool AcceptToMemoryPool(CTxMemPool& pool, CValidationState& state, const CTransa
             // do all inputs exist?
             // Note that this does not check for the presence of actual outputs (see the next check for that),
             // only helps filling in pfMissingInputs (to determine missing vs spent).
-            BOOST_FOREACH (const CTxIn txin, tx.vin) {
+            for (const CTxIn txin : tx.vin) {
                 if (!view.HaveCoins(txin.prevout.hash)) {
                     if (pfMissingInputs)
                         *pfMissingInputs = true;
                     return false;
+                }
+
+                //Check for invalid/fraudulent inputs
+                if (mapInvalidOutPoints.count(txin.prevout)) {
+                    return state.Invalid(error("%s : tried to spend invalid input %s in tx %s", __func__, txin.prevout.ToString(),
+                                                tx.GetHash().GetHex()), REJECT_INVALID, "bad-txns-invalid-inputs");
                 }
             }
 
@@ -1852,11 +1858,17 @@ bool AcceptableInputs(CTxMemPool& pool, CValidationState& state, const CTransact
             // do all inputs exist?
             // Note that this does not check for the presence of actual outputs (see the next check for that),
             // only helps filling in pfMissingInputs (to determine missing vs spent).
-            BOOST_FOREACH (const CTxIn txin, tx.vin) {
+            for (const CTxIn txin : tx.vin) {
                 if (!view.HaveCoins(txin.prevout.hash)) {
                     if (pfMissingInputs)
                         *pfMissingInputs = true;
                     return false;
+                }
+
+                // check for invalid/fraudulent inputs
+                if (mapInvalidOutPoints.count(txin.prevout)) {
+                    return state.Invalid(error("%s : tried to spend invalid input %s in tx %s", __func__, txin.prevout.ToString(),
+                                                tx.GetHash().GetHex()), REJECT_INVALID, "bad-txns-invalid-inputs");
                 }
             }
 
@@ -2583,6 +2595,157 @@ bool CScriptCheck::operator()()
     return true;
 }
 
+map<COutPoint, COutPoint> mapInvalidOutPoints;
+list<CBitcoinAddress> listBadAddresses;
+void AddInvalidSpendsToMap(const CBlock& block)
+{
+    for (const CTransaction tx : block.vtx) {
+        if (!tx.IsZerocoinSpend())
+            continue;
+
+        //Check all zerocoinspends for bad serials
+        for (const CTxIn in : tx.vin) {
+            if (in.scriptSig.IsZerocoinSpend()) {
+                CoinSpend spend = TxInToZerocoinSpend(in);
+
+                //If serial is not valid, mark all outputs as bad
+                if (!spend.HasValidSerial(Params().Zerocoin_Params())) {
+                    LogPrintf("%s :  invalid serial # %s in zerocoinspend tx %s\n", __func__, spend.getCoinSerialNumber().GetHex(), tx.GetHash().GetHex());
+
+                    // Derive the actual valid serial from the invalid serial if possible
+                    CBigNum bnActualSerial = spend.CalculateValidSerial(Params().Zerocoin_Params());
+                    uint256 txHash;
+                    if (zerocoinDB->ReadCoinSpend(bnActualSerial, txHash)) {
+                        LogPrintf("%s : unmutated serial=%s in tx %s\n", __func__, bnActualSerial.GetHex(), txHash.GetHex());
+
+                        CTransaction txPrev;
+                        uint256 hashBlock;
+                        if (!GetTransaction(txHash, txPrev, hashBlock, true))
+                            continue;
+
+                        //Record all txouts from txPrev as invalid
+                        for (unsigned int i = 0; i < txPrev.vout.size(); i++) {
+                            //map to an empty outpoint to represent that this is the first in the chain of bad outs
+                            mapInvalidOutPoints.at(COutPoint(txPrev.GetHash(), i)) = COutPoint();
+                        }
+                    } else {
+                        LogPrintf("%s : unable to find unmutated serial for %s\n", __func__, spend.getCoinSerialNumber().GetHex());
+                    }
+
+                    //Record all txouts from this invalid zerocoin spend tx as invalid
+                    for (unsigned int i = 0; i < tx.vout.size(); i++) {
+                        //map to an empty outpoint to represent that this is the first in the chain of bad outs
+                        mapInvalidOutPoints.at(COutPoint(tx.GetHash(), i)) = COutPoint();
+                    }
+                }
+            }
+        }
+    }
+}
+
+COutPoint FindInvalidUTXOStart(COutPoint out)
+{
+    if (!mapInvalidOutPoints.count(out))
+        return COutPoint();
+
+//    COutPoint outSource = mapBadOuts.at(out);
+//    while (mapBadOuts.count(outSource)) {
+//        //first tx in chain
+//        if (mapBadOuts.at(outSource) == COutPoint())
+//            break;
+//
+//        outSource = mapBadOuts.at(outSource);
+//    }
+
+    return mapInvalidOutPoints.at(out);
+}
+
+//Mark a list of outpoints as spent in coinsview
+//CAmount nValueLocked = 0;
+//bool MarkInvalid(std::list<COutPoint> listOut)
+//{
+//    CCoinsViewCache view(pcoinsTip);
+//    bool fSuccess = true;
+//    for (COutPoint out : listOut) {
+//        if (!view.MarkOutPointInvalid(out)) {
+//                LogPrintf("%s : failed to mark outpoint %s as spent\n", __func__, out.ToString());
+//                fSuccess = false;
+//        } else {
+//            LogPrintf("%s : marked outpoint %s as spent\n", __func__, out.ToString());
+//            CTransaction tx;
+//            uint256 hashBlock;
+//            if (!GetTransaction(out.hash, tx, hashBlock, true))
+//                continue;
+//            if (!tx.vout[out.n].IsZerocoinMint())
+//                nValueLocked += tx.vout[out.n].nValue;
+//        }
+//    }
+//    assert(view.Flush());
+//    return fSuccess;
+//}
+
+void PopulateInvalidOutPointMap()
+{
+    //Calculate over the entire period between the first bad tx and the tip of the chain - or the point at which this becomes enforced
+    int nHeightLast = min(Params().Zerocoin_Block_RecalculateAccumulators(), chainActive.Height());
+
+    for (int i = Params().Zerocoin_Block_FirstFraudulent(); i < nHeightLast; i++) {
+        CBlockIndex* pindex = chainActive[i];
+
+        CBlock block;
+        if (!ReadBlockFromDisk(block, pindex))
+            continue;
+
+        AddInvalidSpendsToMap(block);
+
+        //Any tx's that use a bad TxOut as an input is marked as bad
+        for (CTransaction tx : block.vtx) {
+            for (CTxIn txIn : tx.vin) {
+                if (mapInvalidOutPoints.count(txIn.prevout)) {
+                    std::list<COutPoint> listOutPoints;
+
+                    //If this is a stake transaction, masternode payments should not be considered fraudulent
+                    if (tx.IsCoinStake()) {
+                        CScript scriptPubKeyStake = tx.vout[1].scriptPubKey;
+                        for (unsigned int i =0 ; i < tx.vout.size(); i++) {
+                            //If a payment goes to a different address, then count it as a masternode payment
+                            if (tx.vout[i].scriptPubKey == scriptPubKeyStake) {
+                                CTxDestination dest;
+                                if (!ExtractDestination(scriptPubKeyStake, dest))
+                                    continue;
+                                CBitcoinAddress address(dest);
+                                if (!count(listBadAddresses.begin(), listBadAddresses.begin(), address))
+                                    listBadAddresses.emplace_back(address);
+                                listOutPoints.emplace_back(COutPoint(tx.GetHash(), i));
+                            }
+                        }
+                    } else {
+                        //Consider all outpoints in this transaction as fraudulent
+                        listOutPoints = tx.GetOutPoints();
+
+                        //Generate a list of addresses
+                        for (COutPoint p : listOutPoints) {
+                            CTxDestination dest;
+                            if (!ExtractDestination(tx.vout[p.n].scriptPubKey, dest))
+                                continue;
+                            CBitcoinAddress address(dest);
+                            if (!count(listBadAddresses.begin(), listBadAddresses.begin(), address))
+                                listBadAddresses.emplace_back(address);
+                        }
+                    }
+
+                    //Record each fraudulent outpoint and its cause.
+                    for (COutPoint o : listOutPoints)
+                        mapInvalidOutPoints[o] = txIn.prevout;
+
+                    //The entire tx set of outs are added, break here
+                    break;
+                }
+            }
+        }
+    }
+}
+
 bool CheckInputs(const CTransaction& tx, CValidationState& state, const CCoinsViewCache& inputs, bool fScriptChecks, unsigned int flags, bool cacheStore, std::vector<CScriptCheck>* pvChecks)
 {
     if (!tx.IsCoinBase() && !tx.IsZerocoinSpend()) {
@@ -2604,6 +2767,12 @@ bool CheckInputs(const CTransaction& tx, CValidationState& state, const CCoinsVi
             const COutPoint& prevout = tx.vin[i].prevout;
             const CCoins* coins = inputs.AccessCoins(prevout.hash);
             assert(coins);
+
+            // Check that the inputs are not marked as invalid/fraudulent
+            if (mapInvalidOutPoints.count(prevout)) {
+                return state.Invalid(error("%s : tried to spend invalid input %s in tx %s", __func__, prevout.ToString(), tx.GetHash().GetHex()),
+                                     REJECT_INVALID, "bad-txns-invalid-inputs");
+            }
 
             // If prev is coinbase, check that it's matured
             if (coins->IsCoinBase() || coins->IsCoinStake()) {
@@ -2986,6 +3155,14 @@ bool ConnectBlock(const CBlock& block, CValidationState& state, CBlockIndex* pin
             if (!view.HaveInputs(tx))
                 return state.DoS(100, error("ConnectBlock() : inputs missing/spent"),
                     REJECT_INVALID, "bad-txns-inputs-missingorspent");
+
+            // Check that the inputs are not marked as invalid/fraudulent
+            for (CTxIn in : tx.vin) {
+                if (mapInvalidOutPoints.count(in.prevout)) {
+                    return state.DoS(100, error("%s : tried to spend invalid input %s in tx %s", __func__, in.prevout.ToString(),
+                                  tx.GetHash().GetHex()), REJECT_INVALID, "bad-txns-invalid-inputs");
+                }
+            }
 
             if (fStrictPayToScriptHash) {
                 // Add in sigops done by pay-to-script-hash inputs;

@@ -73,4 +73,11 @@ bool CoinSpend::HasValidSerial(ZerocoinParams* params) const
     return coinSerialNumber > 0 && coinSerialNumber < params->coinCommitmentGroup.groupOrder;
 }
 
+CBigNum CoinSpend::CalculateValidSerial(ZerocoinParams* params)
+{
+    CBigNum bnSerial = coinSerialNumber;
+    bnSerial = bnSerial.mul_mod(CBigNum(1),params->coinCommitmentGroup.groupOrder);
+    return bnSerial;
+}
+
 } /* namespace libzerocoin */

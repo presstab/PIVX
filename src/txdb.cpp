@@ -53,17 +53,6 @@ uint256 CCoinsViewDB::GetBestBlock() const
     return hashBestChain;
 }
 
-bool CCoinsViewDB::GetOutPointValidity(const COutPoint out, bool& fValid)
-{
-    fValid = false;
-    return db.Read(make_pair('i', out), fValid);
-}
-
-bool CCoinsViewDB::MarkOutPointInvalid(const COutPoint out)
-{
-    return db.Write(make_pair('i', out), false);
-}
-
 bool CCoinsViewDB::BatchWrite(CCoinsMap& mapCoins, const uint256& hashBlock)
 {
     CLevelDBBatch batch;

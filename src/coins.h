@@ -368,7 +368,6 @@ public:
     bool GetCoins(const uint256& txid, CCoins& coins) const;
     bool HaveCoins(const uint256& txid) const;
     uint256 GetBestBlock() const;
-    bool GetOutPointValidity(const COutPoint out, bool& fValid) const;
     void SetBackend(CCoinsView& viewIn);
     bool BatchWrite(CCoinsMap& mapCoins, const uint256& hashBlock);
     bool GetStats(CCoinsStats& stats) const;
@@ -432,7 +431,6 @@ public:
     uint256 GetBestBlock() const;
     void SetBestBlock(const uint256& hashBlock);
     bool BatchWrite(CCoinsMap& mapCoins, const uint256& hashBlock);
-    bool GetOutPointValidity(const COutPoint out, bool& fValid) const;
 
     /**
      * Return a pointer to CCoins in the cache, or NULL if not found. This is

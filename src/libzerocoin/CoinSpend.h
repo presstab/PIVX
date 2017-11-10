@@ -92,6 +92,7 @@ public:
 
     bool Verify(const Accumulator& a) const;
     bool HasValidSerial(ZerocoinParams* params) const;
+    CBigNum CalculateValidSerial(ZerocoinParams* params);
 
     ADD_SERIALIZE_METHODS;
     template <typename Stream, typename Operation>

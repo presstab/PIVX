@@ -38,8 +38,6 @@ public:
     bool GetCoins(const uint256& txid, CCoins& coins) const;
     bool HaveCoins(const uint256& txid) const;
     uint256 GetBestBlock() const;
-    bool GetOutPointValidity(const COutPoint out, bool& fValid);
-    bool MarkOutPointInvalid(const COutPoint out);
     bool BatchWrite(CCoinsMap& mapCoins, const uint256& hashBlock);
     bool GetStats(CCoinsStats& stats) const;
 };

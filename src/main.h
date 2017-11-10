@@ -156,6 +156,7 @@ extern int64_t nReserveBalance;
 
 extern std::map<uint256, int64_t> mapRejectedBlocks;
 extern std::map<unsigned int, unsigned int> mapHashedBlocks;
+extern std::map<COutPoint, COutPoint> mapInvalidOutPoints;
 extern std::set<std::pair<COutPoint, unsigned int> > setStakeSeen;
 
 /** Best header we've seen so far (used for getheaders queries' starting points). */
@@ -367,6 +368,8 @@ bool RemoveSerialFromDB(const CBigNum& bnSerial);
 int GetZerocoinStartHeight();
 bool IsTransactionInChain(uint256 txId, int& nHeightTx);
 bool IsBlockHashInChain(const uint256& hashBlock);
+std::list<COutPoint> GetListBadTxOut();
+COutPoint FindInvalidUTXOStart(COutPoint out);
 
 
 /**
