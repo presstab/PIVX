@@ -136,9 +136,23 @@ bool CalculateAccumulatorCheckpoint(int nHeight, uint256& nCheckpoint)
         }
     }
 
+    //Whether this should filter out invalid/fraudulent outpoints
+    bool fFilterInvalid = nHeight >= Params().Zerocoin_Block_RecalculateAccumulators();
+
     //Accumulate all coins over the last ten blocks that havent been accumulated (height - 20 through height - 11)
     int nTotalMintsFound = 0;
     CBlockIndex *pindex = chainActive[nHeight - 20];
+
+    //On a specific block, a recalculation of the accumulators will be forced
+    if (nHeight == Params().Zerocoin_Block_RecalculateAccumulators()) {
+        pindex = chainActive[Params().Zerocoin_Block_LastGoodCheckpoint() - 10];
+        mapAccumulators.Reset();
+        if (!mapAccumulators.Load(chainActive[Params().Zerocoin_Block_LastGoodCheckpoint()]->nAccumulatorCheckpoint)) {
+            LogPrintf("%s: failed to reset to previous checkpoint when recalculating accumulators\n", __func__);
+            return false;
+        }
+    }
+
     while (pindex->nHeight < nHeight - 10) {
         // checking whether we should stop this process due to a shutdown request
         if (ShutdownRequested()) {
@@ -159,7 +173,7 @@ bool CalculateAccumulatorCheckpoint(int nHeight, uint256& nCheckpoint)
         }
 
         std::list<PublicCoin> listPubcoins;
-        if(!BlockToPubcoinList(block, listPubcoins)) {
+        if (!BlockToPubcoinList(block, listPubcoins, fFilterInvalid)) {
             LogPrint("zero","%s: failed to get zerocoin mintlist from block %n\n", __func__, pindex->nHeight);
             return false;
         }
@@ -168,7 +182,7 @@ bool CalculateAccumulatorCheckpoint(int nHeight, uint256& nCheckpoint)
         LogPrint("zero", "%s found %d mints\n", __func__, listPubcoins.size());
 
         //add the pubcoins to accumulator
-        for(const PublicCoin pubcoin : listPubcoins) {
+        for (const PublicCoin pubcoin : listPubcoins) {
             if(!mapAccumulators.Accumulate(pubcoin, true)) {
                 LogPrintf("%s: failed to add pubcoin to accumulator at height %n\n", __func__, pindex->nHeight);
                 return false;

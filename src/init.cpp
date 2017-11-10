@@ -1454,6 +1454,9 @@ bool AppInit2(boost::thread_group& threadGroup)
                     pblocktree->WriteFlag("msindexfix", true);
                 }
 
+                // Populate list of invalid/fraudulent outpoints that are banned from the chain
+                PopulateInvalidOutPointMap();
+
                 // Force recalculation of accumulators.
                 if (GetBoolArg("-reindexaccumulators", false)) {
                     CBlockIndex* pindex = chainActive[Params().Zerocoin_StartHeight()];
@@ -1519,9 +1522,6 @@ bool AppInit2(boost::thread_group& threadGroup)
                             break;
                     }
                 }
-
-                // Populate list of invalid/fraudulent outpoints that are banned from the chain
-                PopulateInvalidOutPointMap();
 
                 uiInterface.InitMessage(_("Verifying blocks..."));
 

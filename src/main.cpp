@@ -1178,13 +1178,32 @@ bool TxOutToPublicCoin(const CTxOut txout, PublicCoin& pubCoin, CValidationState
     return true;
 }
 
-bool BlockToPubcoinList(const CBlock& block, list<PublicCoin>& listPubcoins)
+bool BlockToPubcoinList(const CBlock& block, list<PublicCoin>& listPubcoins, bool fFilterInvalid)
 {
     for (const CTransaction tx : block.vtx) {
         if(!tx.IsZerocoinMint())
             continue;
 
-        for (const CTxOut txOut : tx.vout) {
+        // Filter out mints that have used invalid outpoints
+        if (fFilterInvalid) {
+            bool fValid = true;
+            for (const CTxIn in : tx.vin) {
+                if (!ValidOutPoint(in.prevout, chainActive.Height())) {
+                    fValid = false;
+                    break;
+                }
+            }
+            if (!fValid)
+                continue;
+        }
+
+        uint256 txHash = tx.GetHash();
+        for (unsigned int i = 0; i < tx.vout.size(); i++) {
+            //Filter out mints that use invalid outpoints - edge case: invalid spend with minted change
+            if (fFilterInvalid && !ValidOutPoint(COutPoint(txHash, i), chainActive.Height()))
+                break;
+
+            const CTxOut txOut = tx.vout[i];
             if(!txOut.scriptPubKey.IsZerocoinMint())
                 continue;
 
@@ -3224,7 +3243,7 @@ bool ConnectBlock(const CBlock& block, CValidationState& state, CBlockIndex* pin
     }
 
     // zerocoin accumulator: if a new accumulator checkpoint was generated, check that it is the correct value
-    if (!fVerifyingBlocks && block.nVersion >= Params().Zerocoin_HeaderVersion() && pindex->nHeight % 10 == 0) {
+    if (!fVerifyingBlocks && pindex->nHeight >= Params().Zerocoin_StartHeight() && pindex->nHeight % 10 == 0) {
         uint256 nCheckpointCalculated = 0;
         if (!CalculateAccumulatorCheckpoint(pindex->nHeight, nCheckpointCalculated))
             return state.DoS(100, error("ConnectBlock() : failed to calculate accumulator checkpoint"));
