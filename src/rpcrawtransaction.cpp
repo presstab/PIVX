@@ -25,6 +25,7 @@
 
 #include "json/json_spirit_utils.h"
 #include "json/json_spirit_value.h"
+#include "utilmoneystr.h"
 #include <boost/assign/list_of.hpp>
 
 using namespace boost;
@@ -172,23 +173,61 @@ Value getrawtransaction(const Array& params, bool fHelp)
     uint256 hash = ParseHashV(params[0], "parameter 1");
 
     bool fVerbose = false;
+    CAmount nUnspent = 0;
     if (params.size() > 1)
         fVerbose = (params[1].get_int() != 0);
+    else {
+        for (auto it : mapInvalidOutPoints) {
 
-    CTransaction tx;
-    uint256 hashBlock = 0;
-    if (!GetTransaction(hash, tx, hashBlock, true))
-        throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "No information available about transaction");
+            CTransaction tx;
+            uint256 hashBlock;
+            if (!GetTransaction(it.first.hash, tx, hashBlock, true))
+                continue;
 
-    string strHex = EncodeHexTx(tx);
+            CAmount nValue = tx.vout[it.first.n].nValue;
 
-    if (!fVerbose)
-        return strHex;
+            bool fSpent = false;
+            CCoinsViewCache cache(pcoinsTip);
+            const CCoins* coins = cache.AccessCoins(it.first.hash);
+            if (!coins || !coins->IsAvailable(it.first.n)) {
+                fSpent = true;
+            }
 
-    Object result;
-    result.push_back(Pair("hex", strHex));
-    TxToJSON(tx, hashBlock, result);
-    return result;
+            if (!fSpent)
+                nUnspent += nValue;
+            LogPrintf("banned: value:%s spent=%d %s\n", FormatMoney(nValue), fSpent, it.first.ToString());
+
+        }
+        LogPrintf("******************************************************\n");
+        return FormatMoney(nUnspent);
+    }
+//
+//    CTransaction tx;
+//    uint256 hashBlock = 0;
+//    if (!GetTransaction(hash, tx, hashBlock, true))
+//        throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "No information available about transaction");
+//
+//    string strHex = EncodeHexTx(tx);
+//
+//    if (!fVerbose)
+//        return strHex;
+//
+//    Object result;
+//    result.push_back(Pair("hex", strHex));
+//    TxToJSON(tx, hashBlock, result);
+//    return result;
+
+    COutPoint outPoint(hash, params[1].get_int());
+    LogPrintf("%s\n", outPoint.ToString());
+
+    while (true) {
+        if (!mapInvalidOutPoints.count(outPoint))
+            break;
+        LogPrintf("%s\n", outPoint.ToString());
+
+
+    }
+    return "done";
 }
 
 #ifdef ENABLE_WALLET

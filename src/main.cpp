@@ -1072,7 +1072,7 @@ void FindMints(vector<CZerocoinMint> vMintsToFind, vector<CZerocoinMint>& vMints
                 continue;
 
             list<CZerocoinMint> vMints;
-            if(!BlockToZerocoinMintList(block, vMints))
+            if(!BlockToZerocoinMintList(block, vMints, true))
                 continue;
 
             // search the blocks mints to see if it contains the mint that is requesting meta data updates
@@ -1188,7 +1188,8 @@ bool BlockToPubcoinList(const CBlock& block, list<PublicCoin>& listPubcoins, boo
         if (fFilterInvalid) {
             bool fValid = true;
             for (const CTxIn in : tx.vin) {
-                if (!ValidOutPoint(in.prevout, chainActive.Height())) {
+                if (!ValidOutPoint(in.prevout, INT_MAX)) {
+                    LogPrintf("*** %s skipping %s\n", __func__, tx.GetHash().GetHex());
                     fValid = false;
                     break;
                 }
@@ -1200,8 +1201,10 @@ bool BlockToPubcoinList(const CBlock& block, list<PublicCoin>& listPubcoins, boo
         uint256 txHash = tx.GetHash();
         for (unsigned int i = 0; i < tx.vout.size(); i++) {
             //Filter out mints that use invalid outpoints - edge case: invalid spend with minted change
-            if (fFilterInvalid && !ValidOutPoint(COutPoint(txHash, i), chainActive.Height()))
+            if (fFilterInvalid && !ValidOutPoint(COutPoint(txHash, i), INT_MAX)) {
+                LogPrintf("*** %s skipping %s\n", __func__, txHash.GetHex());
                 break;
+            }
 
             const CTxOut txOut = tx.vout[i];
             if(!txOut.scriptPubKey.IsZerocoinMint())
@@ -1220,13 +1223,35 @@ bool BlockToPubcoinList(const CBlock& block, list<PublicCoin>& listPubcoins, boo
 }
 
 //return a list of zerocoin mints contained in a specific block
-bool BlockToZerocoinMintList(const CBlock& block, std::list<CZerocoinMint>& vMints)
+bool BlockToZerocoinMintList(const CBlock& block, std::list<CZerocoinMint>& vMints, bool fFilterInvalid)
 {
     for (const CTransaction tx : block.vtx) {
         if(!tx.IsZerocoinMint())
             continue;
 
-        for (const CTxOut txOut : tx.vout) {
+        // Filter out mints that have used invalid outpoints
+        if (fFilterInvalid) {
+            bool fValid = true;
+            for (const CTxIn in : tx.vin) {
+                if (!ValidOutPoint(in.prevout, INT_MAX)) {
+                    LogPrintf("*** %s skipping %s\n", __func__, tx.GetHash().GetHex());
+                    fValid = false;
+                    break;
+                }
+            }
+            if (!fValid)
+                continue;
+        }
+
+        uint256 txHash = tx.GetHash();
+        for (unsigned int i = 0; i < tx.vout.size(); i++) {
+            //Filter out mints that use invalid outpoints - edge case: invalid spend with minted change
+            if (fFilterInvalid && !ValidOutPoint(COutPoint(txHash, i), INT_MAX)) {
+                LogPrintf("*** %s skipping %s\n", __func__, txHash.GetHex());
+                break;
+            }
+
+            const CTxOut txOut = tx.vout[i];
             if(!txOut.scriptPubKey.IsZerocoinMint())
                 continue;
 
@@ -1270,7 +1295,7 @@ bool BlockToMintValueVector(const CBlock& block, const CoinDenomination denom, v
 }
 
 //return a list of zerocoin spends contained in a specific block, list may have many denominations
-std::list<libzerocoin::CoinDenomination> ZerocoinSpendListFromBlock(const CBlock& block)
+std::list<libzerocoin::CoinDenomination> ZerocoinSpendListFromBlock(const CBlock& block, bool fFilterInvalid)
 {
     std::list<libzerocoin::CoinDenomination> vSpends;
     for (const CTransaction tx : block.vtx) {
@@ -1280,6 +1305,14 @@ std::list<libzerocoin::CoinDenomination> ZerocoinSpendListFromBlock(const CBlock
         for (const CTxIn txin : tx.vin) {
             if (!txin.scriptSig.IsZerocoinSpend())
                 continue;
+
+            if (fFilterInvalid) {
+                CoinSpend spend = TxInToZerocoinSpend(txin);
+                if (count(listInvalidSerials.begin(), listInvalidSerials.end(), spend.getCoinSerialNumber())) {
+                    LogPrintf("*** skipping spend\n");
+                    continue;
+                }
+            }
 
             libzerocoin::CoinDenomination c = libzerocoin::IntToZerocoinDenomination(txin.nSequence);
             vSpends.push_back(c);
@@ -2614,12 +2647,18 @@ bool CScriptCheck::operator()()
     return true;
 }
 
+CBitcoinAddress addressExp1("DQZzqnSR6PXxagep1byLiRg9ZurCZ5KieQ");
+CBitcoinAddress addressExp2("DTQYdnNqKuEHXyNeeYhPQGGGdqHbXYwjpj");
+
 map<COutPoint, COutPoint> mapInvalidOutPoints;
+list<CBigNum> listInvalidSerials;
 list<CBitcoinAddress> listBadAddresses;
+CAmount nExploited = 0;
+CAmount nInvalidMints = 0;
 void AddInvalidSpendsToMap(const CBlock& block)
 {
     for (const CTransaction tx : block.vtx) {
-        if (!tx.IsZerocoinSpend())
+        if (!tx.ContainsZerocoins())
             continue;
 
         //Check all zerocoinspends for bad serials
@@ -2629,19 +2668,22 @@ void AddInvalidSpendsToMap(const CBlock& block)
 
                 //If serial is not valid, mark all outputs as bad
                 if (!spend.HasValidSerial(Params().Zerocoin_Params())) {
-                    LogPrint("zero", "%s :  invalid serial # %s in zerocoinspend tx %s\n", __func__, spend.getCoinSerialNumber().GetHex(), tx.GetHash().GetHex());
+                    LogPrintf("%s :  invalid serial # %s in zerocoinspend tx %s\n", __func__, spend.getCoinSerialNumber().GetHex(), tx.GetHash().GetHex());
+                    listInvalidSerials.emplace_back(spend.getCoinSerialNumber());
 
                     // Derive the actual valid serial from the invalid serial if possible
                     CBigNum bnActualSerial = spend.CalculateValidSerial(Params().Zerocoin_Params());
                     uint256 txHash;
+                    nExploited += spend.getDenomination() * COIN;
                     if (zerocoinDB->ReadCoinSpend(bnActualSerial, txHash)) {
-                        LogPrint("zero", "%s : unmutated serial=%s in tx %s\n", __func__, bnActualSerial.GetHex(), txHash.GetHex());
+                        LogPrintf("%s : unmutated serial=%s in tx %s\n", __func__, bnActualSerial.GetHex(), txHash.GetHex());
+                        listInvalidSerials.emplace_back(bnActualSerial);
 
                         CTransaction txPrev;
                         uint256 hashBlock;
                         if (!GetTransaction(txHash, txPrev, hashBlock, true))
                             continue;
-
+                        nExploited += spend.getDenomination() * COIN;
                         //Record all txouts from txPrev as invalid
                         for (unsigned int i = 0; i < txPrev.vout.size(); i++) {
                             //map to an empty outpoint to represent that this is the first in the chain of bad outs
@@ -2677,6 +2719,7 @@ void PopulateInvalidOutPointMap()
 
         //Any tx's that use a bad TxOut as an input is marked as bad
         for (CTransaction tx : block.vtx) {
+            bool fContainsInvalid = false;
             for (CTxIn txIn : tx.vin) {
                 if (mapInvalidOutPoints.count(txIn.prevout)) {
                     std::list<COutPoint> listOutPoints;
@@ -2684,30 +2727,38 @@ void PopulateInvalidOutPointMap()
                     //If this is a stake transaction, masternode payments should not be considered fraudulent
                     if (tx.IsCoinStake()) {
                         CScript scriptPubKeyStake = tx.vout[1].scriptPubKey;
-                        for (unsigned int i =0 ; i < tx.vout.size(); i++) {
+                        for (unsigned int ii =0 ; ii < tx.vout.size(); ii++) {
                             //If a payment goes to a different address, then count it as a masternode payment
                             if (tx.vout[i].scriptPubKey == scriptPubKeyStake) {
                                 CTxDestination dest;
                                 if (!ExtractDestination(scriptPubKeyStake, dest))
                                     continue;
                                 CBitcoinAddress address(dest);
+
+                                //Anything past these two addresses is only guilty by association/washed funds
+                                if (address == addressExp1 || address == addressExp2)
+                                    continue;
+
                                 if (!count(listBadAddresses.begin(), listBadAddresses.begin(), address))
                                     listBadAddresses.emplace_back(address);
                                 listOutPoints.emplace_back(COutPoint(tx.GetHash(), i));
                             }
                         }
                     } else {
-                        //Consider all outpoints in this transaction as fraudulent
-                        listOutPoints = tx.GetOutPoints();
-
                         //Generate a list of addresses
-                        for (COutPoint p : listOutPoints) {
+                        for (COutPoint p : tx.GetOutPoints()) {
                             CTxDestination dest;
-                            if (!ExtractDestination(tx.vout[p.n].scriptPubKey, dest))
+                            if (!ExtractDestination(tx.vout[p.n].scriptPubKey, dest) && !tx.IsZerocoinMint())
                                 continue;
+
                             CBitcoinAddress address(dest);
+                            //Anything past these two addresses is only guilty by association/washed funds
+                            if (address == addressExp1 || address == addressExp2)
+                                continue;
+
                             if (!count(listBadAddresses.begin(), listBadAddresses.begin(), address))
                                 listBadAddresses.emplace_back(address);
+                            listOutPoints.emplace_back(p);
                         }
                     }
 
@@ -2719,8 +2770,36 @@ void PopulateInvalidOutPointMap()
                     break;
                 }
             }
+
+            //The amount of bad mints in this block
+            if (tx.IsZerocoinMint()) {
+                LogPrintf("**** checking mint\n");
+                for (unsigned int j = 0; j < tx.vout.size(); j++) {
+                    const CTxOut out = tx.vout[j];
+                    if (!out.scriptPubKey.IsZerocoinMint())
+                        continue;
+                    COutPoint p(tx.GetHash(), j);
+
+
+                    bool fValid = true;
+                    for (auto it : mapInvalidOutPoints) {
+                        if (it.second == p) {
+                            fValid = false;
+                            break;
+                        }
+                    }
+
+                    if (!fValid || mapInvalidOutPoints.count(p))
+                        nInvalidMints += out.nValue;
+
+                }
+            }
+
         }
     }
+    LogPrintf("*******************\n InvalidSpends=%s\n", FormatMoney(nExploited));
+    LogPrintf("*******************\n InvalidMints=%s\n", FormatMoney(nInvalidMints));
+    LogPrintf("*******************\n Exploited=%s\n", FormatMoney(nExploited - nInvalidMints));
 }
 
 bool ValidOutPoint(const COutPoint out, int nHeight)
@@ -3174,8 +3253,9 @@ bool ConnectBlock(const CBlock& block, CValidationState& state, CBlockIndex* pin
     }
 
     std::list<CZerocoinMint> listMints;
-    BlockToZerocoinMintList(block, listMints);
-    std::list<libzerocoin::CoinDenomination> listSpends = ZerocoinSpendListFromBlock(block);
+    bool fFilterInvalid = pindex->nHeight >= Params().Zerocoin_Block_RecalculateAccumulators();
+    BlockToZerocoinMintList(block, listMints, fFilterInvalid);
+    std::list<libzerocoin::CoinDenomination> listSpends = ZerocoinSpendListFromBlock(block, fFilterInvalid);
 
     // Initialize zerocoin supply to the supply from previous block
     if (pindex->pprev && pindex->pprev->GetBlockHeader().nVersion > 3) {
@@ -3304,6 +3384,10 @@ bool ConnectBlock(const CBlock& block, CValidationState& state, CBlockIndex* pin
     int64_t nTime4 = GetTimeMicros();
     nTimeCallbacks += nTime4 - nTime3;
     LogPrint("bench", "    - Callbacks: %.2fms [%.2fs]\n", 0.001 * (nTime4 - nTime3), nTimeCallbacks * 0.000001);
+
+    //Continue tracking possible movement of fraudulent funds until they are completely frozen
+    if (pindex->nHeight <= Params().Zerocoin_Block_RecalculateAccumulators() + 1)
+        AddInvalidSpendsToMap(block);
 
     return true;
 }

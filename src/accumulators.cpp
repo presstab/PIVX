@@ -151,6 +151,7 @@ bool CalculateAccumulatorCheckpoint(int nHeight, uint256& nCheckpoint)
             LogPrintf("%s: failed to reset to previous checkpoint when recalculating accumulators\n", __func__);
             return false;
         }
+        LogPrintf("*** %s recalculating checkpoint\n", __func__);
     }
 
     while (pindex->nHeight < nHeight - 10) {
