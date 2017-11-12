@@ -157,8 +157,9 @@ extern int64_t nReserveBalance;
 extern std::map<uint256, int64_t> mapRejectedBlocks;
 extern std::map<unsigned int, unsigned int> mapHashedBlocks;
 extern std::map<COutPoint, COutPoint> mapInvalidOutPoints;
-extern std::list<CBigNum> listInvalidSerials;
+extern std::map<CBigNum, CAmount> mapSerialAmounts;
 extern std::set<std::pair<COutPoint, unsigned int> > setStakeSeen;
+extern CAmount nExploited;
 
 /** Best header we've seen so far (used for getheaders queries' starting points). */
 extern CBlockIndex* pindexBestHeader;
