@@ -1189,7 +1189,6 @@ bool BlockToPubcoinList(const CBlock& block, list<PublicCoin>& listPubcoins, boo
             bool fValid = true;
             for (const CTxIn in : tx.vin) {
                 if (!ValidOutPoint(in.prevout, INT_MAX)) {
-                    LogPrintf("*** %s skipping %s\n", __func__, tx.GetHash().GetHex());
                     fValid = false;
                     break;
                 }
@@ -1201,10 +1200,8 @@ bool BlockToPubcoinList(const CBlock& block, list<PublicCoin>& listPubcoins, boo
         uint256 txHash = tx.GetHash();
         for (unsigned int i = 0; i < tx.vout.size(); i++) {
             //Filter out mints that use invalid outpoints - edge case: invalid spend with minted change
-            if (fFilterInvalid && !ValidOutPoint(COutPoint(txHash, i), INT_MAX)) {
-                LogPrintf("*** %s skipping %s\n", __func__, txHash.GetHex());
+            if (fFilterInvalid && !ValidOutPoint(COutPoint(txHash, i), INT_MAX))
                 break;
-            }
 
             const CTxOut txOut = tx.vout[i];
             if(!txOut.scriptPubKey.IsZerocoinMint())
@@ -1234,7 +1231,6 @@ bool BlockToZerocoinMintList(const CBlock& block, std::list<CZerocoinMint>& vMin
             bool fValid = true;
             for (const CTxIn in : tx.vin) {
                 if (!ValidOutPoint(in.prevout, INT_MAX)) {
-                    LogPrintf("*** %s skipping %s\n", __func__, tx.GetHash().GetHex());
                     fValid = false;
                     break;
                 }
@@ -1246,10 +1242,8 @@ bool BlockToZerocoinMintList(const CBlock& block, std::list<CZerocoinMint>& vMin
         uint256 txHash = tx.GetHash();
         for (unsigned int i = 0; i < tx.vout.size(); i++) {
             //Filter out mints that use invalid outpoints - edge case: invalid spend with minted change
-            if (fFilterInvalid && !ValidOutPoint(COutPoint(txHash, i), INT_MAX)) {
-                LogPrintf("*** %s skipping %s\n", __func__, txHash.GetHex());
+            if (fFilterInvalid && !ValidOutPoint(COutPoint(txHash, i), INT_MAX))
                 break;
-            }
 
             const CTxOut txOut = tx.vout[i];
             if(!txOut.scriptPubKey.IsZerocoinMint())
@@ -1308,10 +1302,8 @@ std::list<libzerocoin::CoinDenomination> ZerocoinSpendListFromBlock(const CBlock
 
             if (fFilterInvalid) {
                 CoinSpend spend = TxInToZerocoinSpend(txin);
-                if (mapSerialAmounts.count(spend.getCoinSerialNumber())) {
-                    LogPrintf("*** skipping spend\n");
+                if (mapInvalidSerials.count(spend.getCoinSerialNumber()))
                     continue;
-                }
             }
 
             libzerocoin::CoinDenomination c = libzerocoin::IntToZerocoinDenomination(txin.nSequence);
@@ -2651,8 +2643,7 @@ CBitcoinAddress addressExp1("DQZzqnSR6PXxagep1byLiRg9ZurCZ5KieQ");
 CBitcoinAddress addressExp2("DTQYdnNqKuEHXyNeeYhPQGGGdqHbXYwjpj");
 
 map<COutPoint, COutPoint> mapInvalidOutPoints;
-map<CBigNum, CAmount> mapSerialAmounts;
-CAmount nExploited = 0;
+map<CBigNum, CAmount> mapInvalidSerials;
 void AddInvalidSpendsToMap(const CBlock& block)
 {
     for (const CTransaction tx : block.vtx) {
@@ -2666,22 +2657,20 @@ void AddInvalidSpendsToMap(const CBlock& block)
 
                 //If serial is not valid, mark all outputs as bad
                 if (!spend.HasValidSerial(Params().Zerocoin_Params())) {
-                    LogPrintf("%s :  invalid serial # %s in zerocoinspend tx %s\n", __func__, spend.getCoinSerialNumber().GetHex(), tx.GetHash().GetHex());
-                    mapSerialAmounts[spend.getCoinSerialNumber()] = spend.getDenomination() * COIN;
+                    mapInvalidSerials[spend.getCoinSerialNumber()] = spend.getDenomination() * COIN;
 
                     // Derive the actual valid serial from the invalid serial if possible
                     CBigNum bnActualSerial = spend.CalculateValidSerial(Params().Zerocoin_Params());
                     uint256 txHash;
-                    nExploited += spend.getDenomination() * COIN;
+
                     if (zerocoinDB->ReadCoinSpend(bnActualSerial, txHash)) {
-                        LogPrintf("%s : unmutated serial=%s in tx %s\n", __func__, bnActualSerial.GetHex(), txHash.GetHex());
-                        mapSerialAmounts[bnActualSerial] = spend.getDenomination() * COIN;
+                        mapInvalidSerials[bnActualSerial] = spend.getDenomination() * COIN;
 
                         CTransaction txPrev;
                         uint256 hashBlock;
                         if (!GetTransaction(txHash, txPrev, hashBlock, true))
                             continue;
-                        nExploited += spend.getDenomination() * COIN;
+
                         //Record all txouts from txPrev as invalid
                         for (unsigned int i = 0; i < txPrev.vout.size(); i++) {
                             //map to an empty outpoint to represent that this is the first in the chain of bad outs
@@ -2700,8 +2689,8 @@ void AddInvalidSpendsToMap(const CBlock& block)
     }
 }
 
-CAmount nFilteredThroughBittrex = 0;
 // Populate global map (mapInvalidOutPoints) of invalid/fraudulent OutPoints that are banned from being used on the chain.
+CAmount nFilteredThroughBittrex = 0;
 void PopulateInvalidOutPointMap()
 {
     //Calculate over the entire period between the first bad tx and the tip of the chain - or the point at which this becomes enforced
@@ -2789,7 +2778,7 @@ void PopulateInvalidOutPointMap()
 
 bool ValidOutPoint(const COutPoint out, int nHeight)
 {
-    bool isInvalid = nHeight >= Params().Zerocoin_Block_RecalculateAccumulators() && mapInvalidOutPoints.count(out);
+    bool isInvalid = nHeight >= GetSporkValue(SPORK_11_LOCK_INVALID_UTXO) && mapInvalidOutPoints.count(out);
     return !isInvalid;
 }
 
@@ -3054,6 +3043,121 @@ void ThreadScriptCheck()
     scriptcheckqueue.Thread();
 }
 
+void RecalculateZPIVMinted()
+{
+    CBlockIndex *pindex = chainActive[Params().Zerocoin_StartHeight()];
+    int nHeightEnd = chainActive.Height();
+    while (true) {
+        if (pindex->nHeight % 1000 == 0)
+            LogPrintf("%s : block %d...\n", __func__, pindex->nHeight);
+
+        //overwrite possibly wrong vMintsInBlock data
+        CBlock block;
+        assert(ReadBlockFromDisk(block, pindex));
+
+        std::list<CZerocoinMint> listMints;
+        BlockToZerocoinMintList(block, listMints, true);
+
+        vector<libzerocoin::CoinDenomination> vDenomsBefore = pindex->vMintDenominationsInBlock;
+        pindex->vMintDenominationsInBlock.clear();
+        for (auto mint : listMints)
+            pindex->vMintDenominationsInBlock.emplace_back(mint.GetDenomination());
+
+        if (pindex->nHeight < nHeightEnd)
+            pindex = chainActive.Next(pindex);
+        else
+            break;
+    }
+}
+
+void RecalculateZPIVSpent()
+{
+    CBlockIndex* pindex = chainActive[Params().Zerocoin_StartHeight()];
+    while (true) {
+        if (pindex->nHeight % 1000 == 0)
+            LogPrintf("%s : block %d...\n", __func__, pindex->nHeight);
+
+        //Rewrite zPIV supply
+        CBlock block;
+        assert(ReadBlockFromDisk(block, pindex));
+
+        list<libzerocoin::CoinDenomination> listDenomsSpent = ZerocoinSpendListFromBlock(block, true);
+
+        //Reset the supply to previous block
+        pindex->mapZerocoinSupply = pindex->pprev->mapZerocoinSupply;
+
+        //Add mints to zPIV supply
+        for (auto denom : libzerocoin::zerocoinDenomList) {
+            long nDenomAdded = count(pindex->vMintDenominationsInBlock.begin(), pindex->vMintDenominationsInBlock.end(), denom);
+            pindex->mapZerocoinSupply.at(denom) += nDenomAdded;
+        }
+
+        //Remove spends from zPIV supply
+        for (auto denom : listDenomsSpent)
+            pindex->mapZerocoinSupply.at(denom)--;
+
+        //Rewrite money supply
+        assert(pblocktree->WriteBlockIndex(CDiskBlockIndex(pindex)));
+
+        if (pindex->nHeight < chainActive.Height())
+            pindex = chainActive.Next(pindex);
+        else
+            break;
+    }
+}
+
+bool RecalculatePIVSupply()
+{
+    CBlockIndex* pindex = chainActive[Params().Zerocoin_StartHeight()];
+    CAmount nSupplyPrev = pindex->pprev->nMoneySupply;
+
+    while (true) {
+        if (pindex->nHeight % 1000 == 0)
+            LogPrintf("%s : block %d...\n", __func__, pindex->nHeight);
+
+        CBlock block;
+        assert(ReadBlockFromDisk(block, pindex));
+
+        CAmount nValueIn = 0;
+        CAmount nValueOut = 0;
+        for (const CTransaction tx : block.vtx) {
+            for (unsigned int i = 0; i < tx.vin.size(); i++) {
+                if (tx.IsCoinBase())
+                    break;
+
+                if (tx.vin[i].scriptSig.IsZerocoinSpend()) {
+                    nValueIn += tx.vin[i].nSequence * COIN;
+                    continue;
+                }
+
+                COutPoint prevout = tx.vin[i].prevout;
+                CTransaction txPrev;
+                uint256 hashBlock;
+                assert(GetTransaction(prevout.hash, txPrev, hashBlock, true));
+                nValueIn += txPrev.vout[prevout.n].nValue;
+            }
+
+            for (unsigned int i = 0; i < tx.vout.size(); i++) {
+                if (i == 0 && tx.IsCoinStake())
+                    continue;
+
+                nValueOut += tx.vout[i].nValue;
+            }
+        }
+
+        // Rewrite money supply
+        pindex->nMoneySupply = nSupplyPrev + nValueOut - nValueIn;
+        nSupplyPrev = pindex->nMoneySupply;
+        assert(pblocktree->WriteBlockIndex(CDiskBlockIndex(pindex)));
+
+        if (pindex->nHeight < chainActive.Height())
+            pindex = chainActive.Next(pindex);
+        else
+            break;
+    }
+    return true;
+}
+
 static int64_t nTimeVerify = 0;
 static int64_t nTimeConnect = 0;
 static int64_t nTimeIndex = 0;
@@ -3241,6 +3345,11 @@ bool ConnectBlock(const CBlock& block, CValidationState& state, CBlockIndex* pin
     bool fFilterInvalid = pindex->nHeight >= Params().Zerocoin_Block_RecalculateAccumulators();
     BlockToZerocoinMintList(block, listMints, fFilterInvalid);
     std::list<libzerocoin::CoinDenomination> listSpends = ZerocoinSpendListFromBlock(block, fFilterInvalid);
+
+    if (pindex->nHeight == Params().Zerocoin_Block_RecalculateAccumulators()) {
+        RecalculateZPIVMinted();
+        RecalculateZPIVSpent();
+    }
 
     // Initialize zerocoin supply to the supply from previous block
     if (pindex->pprev && pindex->pprev->GetBlockHeader().nVersion > 3) {

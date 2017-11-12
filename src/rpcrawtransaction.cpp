@@ -25,7 +25,6 @@
 
 #include "json/json_spirit_utils.h"
 #include "json/json_spirit_value.h"
-#include "utilmoneystr.h"
 #include <boost/assign/list_of.hpp>
 
 using namespace boost;
@@ -171,108 +170,25 @@ Value getrawtransaction(const Array& params, bool fHelp)
             HelpExampleCli("getrawtransaction", "\"mytxid\"") + HelpExampleCli("getrawtransaction", "\"mytxid\" 1") + HelpExampleRpc("getrawtransaction", "\"mytxid\", 1"));
 
     uint256 hash = ParseHashV(params[0], "parameter 1");
-    map<CBitcoinAddress, CAmount> mapBanAddress;
-    map<COutPoint, int> mapMixedValid;
 
     bool fVerbose = false;
-    CAmount nUnspent = 0;
-    CAmount nMint = 0;
-    CAmount nMixedValid = 0;
-
-    Array ret;
     if (params.size() > 1)
         fVerbose = (params[1].get_int() != 0);
-    else {
-        for (auto it : mapInvalidOutPoints) {
 
-            //Get the tx that the outpoint is from
-            CTransaction tx;
-            uint256 hashBlock;
-            if (!GetTransaction(it.first.hash, tx, hashBlock, true)) {
-                LogPrintf("***** failed to find tx\n");
-                continue;
-            }
+    CTransaction tx;
+    uint256 hashBlock = 0;
+    if (!GetTransaction(hash, tx, hashBlock, true))
+        throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "No information available about transaction");
 
-            Object objTx;
-            objTx.emplace_back(Pair("inv_out", it.first.ToString()));
+    string strHex = EncodeHexTx(tx);
 
-            CAmount nValue = tx.vout[it.first.n].nValue;
-            objTx.emplace_back(Pair("value", FormatMoney(nValue)));
+    if (!fVerbose)
+        return strHex;
 
-            //Search the txin's to see if any of them are "valid".
-            Object objMixedValid;
-
-            //if some of the other inputs are valid
-            for(CTxIn in2 : tx.vin) {
-                //See if this is already accounted for
-                if(mapInvalidOutPoints.count(in2.prevout) || mapMixedValid.count(in2.prevout))
-                    continue;
-
-                CTransaction txPrev;
-                uint256 hashBlock;
-                if(!GetTransaction(in2.prevout.hash, txPrev, hashBlock, true))
-                    continue;
-
-                //This is a valid outpoint that mixed with an invalid outpoint. Investigate this person.
-                //Information leakage, not covering their tracks well enough
-                CAmount nValid = txPrev.vout[in2.prevout.n].nValue;
-                objMixedValid.emplace_back(Pair(FormatMoney(nValid), in2.prevout.ToString()));
-
-                nMixedValid += nValid;
-                mapMixedValid[in2.prevout] = 1;
-            }
-
-            bool fSpent = false;
-            CCoinsViewCache cache(pcoinsTip);
-            const CCoins* coins = cache.AccessCoins(it.first.hash);
-            if (!coins || !coins->IsAvailable(it.first.n)) {
-                fSpent = true;
-            }
-
-            objTx.emplace_back(Pair("spent", fSpent));
-            if (!objMixedValid.empty())
-                objTx.emplace_back(Pair("mixed_with_valid", objMixedValid));
-
-            CScript scriptPubKey = tx.vout[it.first.n].scriptPubKey;
-            if (scriptPubKey.IsZerocoinMint()) {
-                nMint += nValue;
-            } else if (!fSpent) {
-                CTxDestination dest;
-                if (!ExtractDestination(scriptPubKey, dest)) {
-                    LogPrintf("***** failed to extract dest\n");
-                    continue;
-                }
-                CBitcoinAddress address(dest);
-                mapBanAddress[address] += nValue;
-                nUnspent += nValue;
-            }
-
-            ret.emplace_back(objTx);
-        }
-
-        Object obj;
-        for (auto it : mapBanAddress) {
-            obj.emplace_back(Pair(it.first.ToString(), FormatMoney(it.second)));
-        }
-        obj.emplace_back(Pair("Total Unspent", FormatMoney(nUnspent)));
-        obj.emplace_back(Pair("Total Mint", FormatMoney(nMint)));
-        obj.emplace_back(Pair("Total Mixed Valid", FormatMoney(nMixedValid)));
-
-        ret.emplace_back(obj);
-        return ret;
-    }
-
-    COutPoint outPoint(hash, params[1].get_int());
-    LogPrintf("%s\n", outPoint.ToString());
-
-    while (true) {
-        if (!mapInvalidOutPoints.count(outPoint))
-            break;
-        LogPrintf("%s\n", outPoint.ToString());
-
-
-    }
-    return "done";
+    Object result;
+    result.push_back(Pair("hex", strHex));
+    TxToJSON(tx, hashBlock, result);
+    return result;
 }
 
 #ifdef ENABLE_WALLET

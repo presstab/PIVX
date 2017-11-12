@@ -728,6 +728,15 @@ Value reconsiderblock(const Array& params, bool fHelp)
 
 Value getinvalid (const Array& params, bool fHelp)
 {
+    if (fHelp || params.size() > 1)
+        throw runtime_error(
+                "getinvalid \n"
+                        "\nGet a summary of invalidated outpoints.\n"
+                        "\nArguments:\n"
+                        "1. all   (string, optional) return a full list of outpoints even if they are spent\n"
+                        "\nExamples:\n" +
+                HelpExampleCli("getinvalid", "\"all\"") + HelpExampleRpc("getinvalid", "\"all\""));
+
     string strCommand;
     if (params.size() == 1){
         strCommand = params[0].get_str();
@@ -736,7 +745,7 @@ Value getinvalid (const Array& params, bool fHelp)
     if (strCommand == "serials") {
         Array ret;
         CAmount nSerialTotal = 0;
-        for (auto it : mapSerialAmounts) {
+        for (auto it : mapInvalidSerials) {
             Object objSerial;
             objSerial.emplace_back(Pair(it.first.GetHex(), FormatMoney(it.second)));
             nSerialTotal += it.second;
@@ -753,22 +762,19 @@ Value getinvalid (const Array& params, bool fHelp)
     if (strCommand == "all")
         fShowAll = true;
 
-    map<CBitcoinAddress, CAmount> mapBanAddress;
-    map<COutPoint, int> mapMixedValid;
-
     CAmount nUnspent = 0;
     CAmount nMint = 0;
     CAmount nMixedValid = 0;
+    map<CBitcoinAddress, CAmount> mapBanAddress;
+    map<COutPoint, int> mapMixedValid;
 
     Array ret;
-
     for (auto it : mapInvalidOutPoints) {
         COutPoint out = it.first;
         //Get the tx that the outpoint is from
         CTransaction tx;
         uint256 hashBlock;
         if (!GetTransaction(out.hash, tx, hashBlock, true)) {
-            LogPrintf("***** failed to find tx\n");
             continue;
         }
 
@@ -818,7 +824,6 @@ Value getinvalid (const Array& params, bool fHelp)
         } else if (!fSpent) {
             CTxDestination dest;
             if (!ExtractDestination(scriptPubKey, dest)) {
-                LogPrintf("FAILED TO EXTRACT!!!\n");
                 continue;
             }
             CBitcoinAddress address(dest);
@@ -840,7 +845,6 @@ Value getinvalid (const Array& params, bool fHelp)
     obj.emplace_back(Pair("addresses_with_invalid", objAddresses));
     obj.emplace_back(Pair("total_unspent", FormatMoney(nUnspent)));
     obj.emplace_back(Pair("total_minted", FormatMoney(nMint)));
-    obj.emplace_back(Pair("total_invalid_spends", FormatMoney(nExploited)));
     obj.emplace_back(Pair("total_valid_used", FormatMoney(nMixedValid)));
 
     ret.emplace_back(obj);
