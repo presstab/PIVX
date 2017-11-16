@@ -10,6 +10,10 @@
 #include <boost/test/unit_test.hpp>
 #include <iostream>
 #include <accumulators.h>
+#include "zpivwallet.h"
+#include "../zpivwallet.h"
+#include "../uint256.h"
+#include "../utiltime.h"
 
 using namespace libzerocoin;
 
@@ -346,6 +350,23 @@ BOOST_AUTO_TEST_CASE(checksum_tests)
         BOOST_CHECK_MESSAGE(checksumParsed == vChecksums[i], "checksum parse failed");
         i++;
     }
+}
+
+BOOST_AUTO_TEST_CASE(deterministic_tests)
+{
+    uint256 seedMaster("3a1947364362e2e7c073b386869c89c905c0cf462448ffd6c2021bd03ce689f6");
+    CzPIVWallet zWallet(seedMaster);
+
+    int64_t nTimeStart = GetTimeMillis();
+    for (int i = 0; i < 50; i++) {
+        CoinDenomination denom = CoinDenomination::ZQ_FIFTY;
+        PrivateCoin coin(Params().Zerocoin_Params(), denom);
+        BOOST_CHECK_MESSAGE(zWallet.GenerateDeterministicZPiv(denom, coin), "failed to generate mint");
+        cout << "Deterministic Mint " << i << " value=" << coin.getPublicCoin().getValue().GetHex() << endl;
+    }
+
+    int64_t nTotalTime = GetTimeMillis() - nTimeStart;
+    cout << "total time=" << nTotalTime << " Per Mint:" << (nTotalTime/50) << endl;
 }
 
 

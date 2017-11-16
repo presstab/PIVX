@@ -18,6 +18,7 @@
 #include "amount.h"
 #include "bignum.h"
 #include "util.h"
+#include <iostream>
 namespace libzerocoin
 {
 /** A Public coin is the part of a coin that
@@ -56,6 +57,18 @@ public:
      * @return true if valid
      */
     bool validate() const {
+        bool low = (this->params->accumulatorParams.minCoinValue >= value);
+        if (low)
+            std::cout << "too low" << std::endl;
+
+        bool high = (value >= this->params->accumulatorParams.maxCoinValue);
+        if (high)
+            std::cout << "too high" << std::endl;
+
+        bool prime = value.isPrime(params->zkp_iterations);
+        if (!prime)
+            std::cout << "not prime" << std::endl;
+
         return (this->params->accumulatorParams.minCoinValue < value) && (value < this->params->accumulatorParams.maxCoinValue) && value.isPrime(params->zkp_iterations);
     }
 
@@ -92,7 +105,7 @@ public:
     {
         strm >> *this;
     }
-    PrivateCoin(const ZerocoinParams* p, const CoinDenomination denomination);
+    PrivateCoin(const ZerocoinParams* p, const CoinDenomination denomination, bool fMintNew = true);
     PrivateCoin(const ZerocoinParams* p, const CoinDenomination denomination, const CBigNum& bnSerial, const CBigNum& bnRandomness);
     const PublicCoin& getPublicCoin() const { return this->publicCoin; }
     // @return the coins serial number
@@ -102,6 +115,7 @@ public:
     void setPublicCoin(PublicCoin p) { publicCoin = p; }
     void setRandomness(Bignum n) { randomness = n; }
     void setSerialNumber(Bignum n) { serialNumber = n; }
+    bool IsValid();
 
     ADD_SERIALIZE_METHODS;
     template <typename Stream, typename Operation>
