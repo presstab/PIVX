@@ -56,21 +56,7 @@ public:
     /** Checks that coin is prime and in the appropriate range given the parameters
      * @return true if valid
      */
-    bool validate() const {
-        bool low = (this->params->accumulatorParams.minCoinValue >= value);
-        if (low)
-            std::cout << "too low" << std::endl;
-
-        bool high = (value >= this->params->accumulatorParams.maxCoinValue);
-        if (high)
-            std::cout << "too high" << std::endl;
-
-        bool prime = value.isPrime(params->zkp_iterations);
-        if (!prime)
-            std::cout << "not prime" << std::endl;
-
-        return (this->params->accumulatorParams.minCoinValue < value) && (value < this->params->accumulatorParams.maxCoinValue) && value.isPrime(params->zkp_iterations);
-    }
+    bool validate() const;
 
     ADD_SERIALIZE_METHODS;
     template <typename Stream, typename Operation>

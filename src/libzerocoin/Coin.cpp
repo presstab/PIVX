@@ -46,6 +46,11 @@ PublicCoin::PublicCoin(const ZerocoinParams* p, const CBigNum& coin, const CoinD
 	}
 };
 
+bool PublicCoin::validate() const
+{
+    return (this->params->accumulatorParams.minCoinValue < value) && (value < this->params->accumulatorParams.maxCoinValue) && value.isPrime(params->zkp_iterations);
+}
+
 //PrivateCoin class
 PrivateCoin::PrivateCoin(const ZerocoinParams* p, const CoinDenomination denomination, bool fMintNew): params(p), publicCoin(p) {
 	// Verify that the parameters are valid

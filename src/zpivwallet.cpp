@@ -18,29 +18,51 @@ CzPIVWallet::CzPIVWallet(uint256 seedMaster)
 
 uint256 RightRotate(uint256 seedIn)
 {
-    uint256 mask = 15;
     uint256 seedOut = seedIn;
-    seedOut >>= 4;
-    seedOut |= ((seedIn & mask) << 252);
+    seedOut >>= 1;
+    seedIn &= 1;
+    seedIn <<= 255;
+    seedOut |= seedIn;
+
     return seedOut;
 }
 
 bool RotateUntilValid(CBigNum bnMax, uint256& hash)
 {
-    CBigNum bnSerialTemp = CBigNum(hash);
+    CBigNum bnValue(hash);
     bool fValidSerial = false;
     int nAttempts = 0;
     while (!fValidSerial) {
         hash = RightRotate(hash);
-        bnSerialTemp = CBigNum(hash);
-        fValidSerial = bnSerialTemp < bnMax && bnSerialTemp > 0;
+        bnValue.setuint256(hash);
+        fValidSerial = bnValue < bnMax && bnValue > 0;
 
         nAttempts++;
-        if (nAttempts >= 64)
+        if (nAttempts >= 255)
             break;
     }
 
     return fValidSerial;
+}
+
+// Check if the value of the commitment meets requirements
+bool IsValidCoinValue(const CBigNum& bnValue)
+{
+    return bnValue >= Params().Zerocoin_Params()->accumulatorParams.minCoinValue &&
+    bnValue <= Params().Zerocoin_Params()->accumulatorParams.maxCoinValue &&
+    bnValue.isPrime(ZEROCOIN_MINT_PRIME_PARAM);
+}
+
+bool CreateValidCommitmentVariable(uint256& hash)
+{
+    CBigNum bnValue(hash);
+    if (bnValue >= Params().Zerocoin_Params()->coinCommitmentGroup.groupOrder) {
+        //See if this value can be inexpensively modified to meet the criteria
+        if (!RotateUntilValid(Params().Zerocoin_Params()->coinCommitmentGroup.groupOrder, hash))
+            return false;
+    }
+
+    return true;
 }
 
 void CzPIVWallet::SeedToZPiv(uint512 seedZerocoin, CBigNum& bnSerial, CBigNum& bnRandomness)
@@ -57,42 +79,35 @@ void CzPIVWallet::SeedToZPiv(uint512 seedZerocoin, CBigNum& bnSerial, CBigNum& b
 
         //hash serial seed
         uint256 hashSerial = Hash(serialSeed.begin(), serialSeed.end());
-        CBigNum bnSerialTemp = CBigNum(hashSerial);
-        bool fValidSerial = bnSerialTemp < params->coinCommitmentGroup.groupOrder;
-        if (!fValidSerial) {
-            fValidSerial = RotateUntilValid(params->coinCommitmentGroup.groupOrder, hashSerial);
-        }
-
-        if (!fValidSerial)
+        if (!CreateValidCommitmentVariable(hashSerial))
             continue;
+        bnSerial.setuint256(hashSerial);
+
+        //extract randomness seed from seedstatezerocoin
+        uint256 randomnessSeed = uint512(seedStateZerocoin >> 256).trim256();
 
         //hash randomness seed
-        uint256 randomnessSeed = uint512(seedStateZerocoin >> 256).trim256();
         uint256 hashRandomness = Hash(randomnessSeed.begin(), randomnessSeed.end());
-        CBigNum bnRandomTemp(hashRandomness);
-        bool fValidRandomness = bnRandomTemp < params->coinCommitmentGroup.groupOrder;
-        if (!fValidRandomness) {
-            fValidRandomness = RotateUntilValid(params->coinCommitmentGroup.groupOrder, hashRandomness);
-        }
 
-        // serial and randomness need to be under a certain value
-        if (!fValidRandomness)
-            continue;
+        while (true) {
+            CBigNum bnCommitment = 0;
+            if (CreateValidCommitmentVariable(hashRandomness)) {
+                bnRandomness.setuint256(hashRandomness);
+                // Generate a Pedersen commitment to the serial number
+                bnCommitment = params->coinCommitmentGroup.g.pow_mod(bnSerial, params->coinCommitmentGroup.modulus).
+                    mul_mod(params->coinCommitmentGroup.h.pow_mod(bnRandomness, params->coinCommitmentGroup.modulus), params->coinCommitmentGroup.modulus);
 
-        bnSerialTemp = CBigNum(hashSerial);
-        bnRandomness = CBigNum(hashRandomness);
-        // Generate a Pedersen commitment to the serial number
-        Commitment commitment(&params->coinCommitmentGroup, bnSerialTemp, bnRandomTemp);
+                // Now verify that the commitment is a prime number
+                // in the appropriate range. If not, we'll throw this coin
+                // away and generate a new one.
+                if (IsValidCoinValue(bnCommitment))
+                    return;
+            }
 
-        // Now verify that the commitment is a prime number
-        // in the appropriate range. If not, we'll throw this coin
-        // away and generate a new one.
-        if (commitment.getCommitmentValue().isPrime(ZEROCOIN_MINT_PRIME_PARAM) &&
-                commitment.getCommitmentValue() >= params->accumulatorParams.minCoinValue &&
-                commitment.getCommitmentValue() <= params->accumulatorParams.maxCoinValue) {
-            bnSerial = bnSerialTemp;
-            bnRandomness = bnRandomTemp;
-            return;
+            if (bnCommitment == 0)
+                hashRandomness = Hash(hashRandomness.begin(), hashRandomness.end());
+            else
+                hashRandomness = bnCommitment.getuint256();
         }
     }
 }
