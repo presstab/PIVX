@@ -4,16 +4,17 @@
 
 #include "zpivwallet.h"
 #include "main.h"
+#include "walletdb.h"
 
 using namespace libzerocoin;
 
-CzPIVWallet::CzPIVWallet(uint256 seedMaster)
+CzPIVWallet::CzPIVWallet(uint256 seedMaster, string strWalletFile)
 {
     this->seedMaster = seedMaster;
+    this->strWalletFile = strWalletFile;
 
-    CDataStream ss(SER_GETHASH, 0);
-    ss << seedMaster;
-    seedState = Hash512(ss.begin(), ss.end());
+    if (!CWalletDB(strWalletFile).ReadZPIVCount(nCount))
+        nCount = 0;
 }
 
 uint256 RightRotate(uint256 seedIn)
@@ -133,19 +134,19 @@ void CzPIVWallet::SeedToZPiv(uint512 seedZerocoin, CBigNum& bnSerial, CBigNum& b
 uint512 CzPIVWallet::GetNextZerocoinSeed()
 {
     CDataStream ss(SER_GETHASH, 0);
-    ss << seedMaster << seedState;
+    ss << seedMaster << nCount;
     uint512 zerocoinSeed = Hash512(ss.begin(), ss.end());
     return zerocoinSeed;
 }
 
-void CzPIVWallet::UpdateState(uint512 seedZerocoin)
+void CzPIVWallet::UpdateCount()
 {
-    CDataStream ss(SER_GETHASH, 0);
-    ss << seedMaster << seedZerocoin;
-    seedState = Hash512(ss.begin(), ss.end());
+    nCount++;
+    CWalletDB walletdb(strWalletFile);
+    walletdb.WriteZPIVCount(nCount);
 }
 
-bool CzPIVWallet::GenerateDeterministicZPiv(CoinDenomination denom, PrivateCoin& coin)
+bool CzPIVWallet::GenerateDeterministicZPIV(CoinDenomination denom, PrivateCoin& coin)
 {
     uint512 seedZerocoin = GetNextZerocoinSeed();
 
@@ -154,8 +155,8 @@ bool CzPIVWallet::GenerateDeterministicZPiv(CoinDenomination denom, PrivateCoin&
     SeedToZPiv(seedZerocoin, bnSerial, bnRandomness);
     coin = PrivateCoin(Params().Zerocoin_Params(), denom, bnSerial, bnRandomness);
 
-    //set to the next seedstate
-    UpdateState(seedZerocoin);
+    //set to the next count
+    UpdateCount();
 
     return true;
 }

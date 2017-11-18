@@ -12,15 +12,16 @@ class CzPIVWallet
 {
 private:
     uint256 seedMaster;
-    uint512 seedState;
+    uint32_t nCount;
+    std::string strWalletFile;
 
 public:
-    explicit CzPIVWallet(uint256 seedMaster);
-    bool GenerateDeterministicZPiv(libzerocoin::CoinDenomination denom, libzerocoin::PrivateCoin& coin);
+    explicit CzPIVWallet(uint256 seedMaster, std::string strWalletFile);
+    bool GenerateDeterministicZPIV(libzerocoin::CoinDenomination denom, libzerocoin::PrivateCoin& coin);
 
 private:
     uint512 GetNextZerocoinSeed();
-    void UpdateState(uint512 seedZerocoin);
+    void UpdateCount();
     void SeedToZPiv(uint512 seed, CBigNum& bnSerial, CBigNum& bnRandomness);
 };
 

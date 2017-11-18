@@ -25,6 +25,7 @@
 
 #include "denomination_functions.h"
 #include "libzerocoin/Denominations.h"
+#include "zpivwallet.h"
 #include <assert.h>
 
 #include <boost/algorithm/string/replace.hpp>
@@ -1276,8 +1277,11 @@ CAmount CWallet::GetBalance() const
         LOCK2(cs_main, cs_wallet);
         for (map<uint256, CWalletTx>::const_iterator it = mapWallet.begin(); it != mapWallet.end(); ++it) {
             const CWalletTx* pcoin = &(*it).second;
+
             if (pcoin->IsTrusted())
                 nTotal += pcoin->GetAvailableCredit();
+            else if (Params().NetworkID() == CBaseChainParams::UNITTEST)
+                nTotal += pcoin->GetValueOut();
         }
     }
 
@@ -1600,6 +1604,10 @@ void CWallet::AvailableCoins(vector<COutput>& vCoins, bool fOnlyConfirmed, const
         for (map<uint256, CWalletTx>::const_iterator it = mapWallet.begin(); it != mapWallet.end(); ++it) {
             const uint256& wtxid = it->first;
             const CWalletTx* pcoin = &(*it).second;
+
+            //For unit tests, consider anything as valid
+            if (Params().NetworkID() == CBaseChainParams::UNITTEST)
+                vCoins.emplace_back(COutput(pcoin, 0, 10, true));
 
             if (!CheckFinalTx(*pcoin))
                 continue;
@@ -2701,6 +2709,8 @@ bool CWallet::CreateCoinStake(const CKeyStore& keystore, unsigned int nBits, int
  */
 bool CWallet::CommitTransaction(CWalletTx& wtxNew, CReserveKey& reservekey, std::string strCommand)
 {
+    if (Params().NetworkID() == CBaseChainParams::UNITTEST)
+        return true;
     {
         LOCK2(cs_main, cs_wallet);
         LogPrintf("CommitTransaction:\n%s", wtxNew.ToString());
@@ -3979,7 +3989,11 @@ bool CWallet::CreateZerocoinMintTransaction(const CAmount nValue, CMutableTransa
         nMintingValue += nValueNewMint;
 
         // mint a new coin (create Pedersen Commitment) and extract PublicCoin that is shareable from it
-        libzerocoin::PrivateCoin newCoin(Params().Zerocoin_Params(), denomination);
+        libzerocoin::PrivateCoin newCoin(Params().Zerocoin_Params(), denomination, false);
+        if (!zwalletMain->GenerateDeterministicZPIV(denomination, newCoin)) {
+            strFailReason = _("failed to generate deterministic zPIV");
+            return false;
+        }
         libzerocoin::PublicCoin pubCoin = newCoin.getPublicCoin();
 
         // Validate
