@@ -16,12 +16,10 @@ private:
 
 public:
     explicit CzPIVWallet(uint256 seedMaster);
-    bool GenerateDeterministicZPiv(libzerocoin::CoinDenomination denom, libzerocoin::PrivateCoin& coin);
+    bool GenerateDeterministicZPiv(int nNumberOfMintsNeeded, libzerocoin::CoinDenomination denom, std::vector<libzerocoin::PrivateCoin>& coins);
 
 private:
-    uint512 GetNextZerocoinSeed();
-    void UpdateState(uint512 seedZerocoin);
-    void SeedToZPiv(uint512 seed, CBigNum& bnSerial, CBigNum& bnRandomness);
+    void SeedToZPiv(uint512 seed, CBigNum& bnSerial, CBigNum& bnRandomness, uint256& attempts256);
 };
 
 #endif //PIVX_ZPIVWALLET_H
