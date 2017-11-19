@@ -13,6 +13,7 @@ class CzPIVWallet
 private:
     uint256 seedMaster;
     uint512 seedState;
+    uint256 coinNumber;
 
 public:
     explicit CzPIVWallet(uint256 seedMaster);

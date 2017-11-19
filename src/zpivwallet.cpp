@@ -10,7 +10,7 @@ using namespace libzerocoin;
 CzPIVWallet::CzPIVWallet(uint256 seedMaster)
 {
     this->seedMaster = seedMaster;
-
+    this->coinNumber = 0;
     CDataStream ss(SER_GETHASH, 0);
     ss << seedMaster;
     seedState = Hash512(ss.begin(), ss.end());
@@ -26,55 +26,45 @@ bool IsValidCoinValue(const CBigNum& bnValue)
 
 void CzPIVWallet::SeedToZPiv(uint512 seedZerocoin, CBigNum& bnSerial, CBigNum& bnRandomness, uint256& attempts256)
 {
-    uint512 seedStateZerocoin = seedZerocoin;
     ZerocoinParams* params = Params().Zerocoin_Params();
-    while (true)
-    {
-        //change the seed to the next 'state'
-        seedStateZerocoin = Hash512(seedStateZerocoin.begin(), seedStateZerocoin.end());
 
-        //convert state seed into a seed for the serial and one for randomness
-        uint256 serialSeed = seedStateZerocoin.trim256();
+    //convert state seed into a seed for the serial and one for randomness
+    uint256 serialSeed = seedZerocoin.trim256();
+    bnSerial.setuint256(serialSeed);
+    bnSerial = bnSerial % params->coinCommitmentGroup.groupOrder;
+    
+    //std::cout << "Serial # = " << bnSerial.ToString() << "\n";
 
-        //hash serial seed
-        uint256 hashSerial = Hash(serialSeed.begin(), serialSeed.end());
-        bnSerial.setuint256(hashSerial);
-        bnSerial = bnSerial % params->coinCommitmentGroup.groupOrder;
+    //hash randomness seed with Bottom 256 bits of seedZerocoin & attempts256 which is initially 0
+    uint256 randomnessSeed = uint512(seedZerocoin >> 256).trim256();
+    uint256 hashRandomness = Hash(randomnessSeed.begin(), randomnessSeed.end(),
+                                  attempts256.begin(), attempts256.end());
+    bnRandomness.setuint256(hashRandomness);
 
-        //hash randomness seed
-        uint256 randomnessSeed = uint512(seedStateZerocoin >> 256).trim256();
-
-        CBigNum commitmentValue;
-
-        uint256 hashRandomness = Hash(randomnessSeed.begin(), randomnessSeed.end(),
-                                      attempts256.begin(), attempts256.end());
+    // Iterate on Randomness until a valid commitmentValue is found
+    while (true) {
+        bnRandomness = bnRandomness % params->coinCommitmentGroup.groupOrder;
         
-        bnRandomness.setuint256(hashRandomness);
-
-        // Iterate on Randomness until a valid commitmentValue is found
-        while (true) {
-            bnRandomness = bnRandomness % params->coinCommitmentGroup.groupOrder;
-
-            //See if serial and randomness make a valid commitment
-            // Generate a Pedersen commitment to the serial number
-            commitmentValue = params->coinCommitmentGroup.g.pow_mod(bnSerial, params->coinCommitmentGroup.modulus).mul_mod(
+        //See if serial and randomness make a valid commitment
+        // Generate a Pedersen commitment to the serial number
+        CBigNum commitmentValue = params->coinCommitmentGroup.g.pow_mod(bnSerial, params->coinCommitmentGroup.modulus).mul_mod(
                         params->coinCommitmentGroup.h.pow_mod(bnRandomness, params->coinCommitmentGroup.modulus),
                         params->coinCommitmentGroup.modulus);
 
-            // Now verify that the commitment is a prime number
-            // in the appropriate range. If not, we'll throw this coin
-            // away and generate a new one.
-            if (IsValidCoinValue(commitmentValue)) {
-                return;
-            }
-
-            //Did not create a valid commitment value.
-            //Change randomness to something new and random and try again
-            attempts256 = attempts256 + 1;
-            hashRandomness = Hash(randomnessSeed.begin(), randomnessSeed.end(),
-                                  attempts256.begin(), attempts256.end());
-            bnRandomness.setuint256(hashRandomness);
+        // Now verify that the commitment is a prime number
+        // in the appropriate range. If not, we'll throw this coin
+        // away and generate a new one.
+        if (IsValidCoinValue(commitmentValue)) {
+            //std::cout << "Attempt # " << attempts256.Get32() << "\n";/// << attempts256.ToString() << ") Done\n";
+            return;
         }
+
+        //Did not create a valid commitment value.
+        //Change randomness to something new and random and try again
+        attempts256++;
+        hashRandomness = Hash(randomnessSeed.begin(), randomnessSeed.end(),
+                              attempts256.begin(), attempts256.end());
+        bnRandomness.setuint256(hashRandomness);
     }
 }
 
@@ -84,8 +74,12 @@ bool CzPIVWallet::GenerateDeterministicZPiv(int nNumberOfMints, CoinDenomination
     CBigNum bnRandomness;
     uint256 attempts(0);
 
+    // coinNumber is retained between calls be able to continue minting from last value
     for (int i=0;i<nNumberOfMints;i++) {
-        SeedToZPiv(seedState, bnSerial, bnRandomness, attempts);
+        uint512 coinSeedState = Hash512(seedState.begin(), seedState.end(), coinNumber.begin(), coinNumber.end());
+        coinNumber++;
+        attempts = 0;
+        SeedToZPiv(coinSeedState, bnSerial, bnRandomness, attempts);
         PrivateCoin coin = PrivateCoin(Params().Zerocoin_Params(), denom, bnSerial, bnRandomness);
         MintedCoins.push_back(coin);
     }

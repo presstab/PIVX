@@ -264,7 +264,6 @@ BOOST_AUTO_TEST_CASE(checkzerocoinspend_test)
     BOOST_CHECK_MESSAGE(strError == "Transaction spend more than was redeemed in zerocoins", str);
 }
 
-
 BOOST_AUTO_TEST_CASE(setup_exceptions_test)
 {
     cout << "Running check_unitialized parameters,etc for setup exceptions...\n";
@@ -377,8 +376,7 @@ BOOST_AUTO_TEST_CASE(deterministic_tests)
     cout << "Checking that mints are deterministic: sha256 checksum=";
     uint256 hash = Hash(ss.begin(), ss.end());
     cout << hash.GetHex() << endl;
-    BOOST_CHECK_MESSAGE(hash == uint256("c3f9d07fdadcd80394f5e53b79d823bfb4caf6920846c44cf06c54166e18f930"), "minting determinism isn't as expected");
-
+    BOOST_CHECK_MESSAGE(hash == uint256("95d89e297fa5911b879929e35f675f02b9c39940c97f569a3b44bef5e6f2580a"), "minting determinism isn't as expected");
 }
 
 
