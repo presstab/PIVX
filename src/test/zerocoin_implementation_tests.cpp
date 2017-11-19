@@ -396,9 +396,9 @@ BOOST_AUTO_TEST_CASE(deterministic_tests)
     for (int i = 0; i < nTests; i++) {
         PrivateCoin coin(Params().Zerocoin_Params(), denom, false);
         BOOST_CHECK_MESSAGE(zWallet.GenerateDeterministicZPIV(denom, coin), "failed to generate mint");
-        cout << "Generated " << (i+1) << " mints" << endl;
         vCoins.emplace_back(coin);
     }
+    cout << "Generated " << vCoins.size() << " mints" << endl;
 
     int64_t nTotalTime = GetTimeMillis() - nTimeStart;
     cout << "Total time:" << nTotalTime << "ms. Per Deterministic Mint:" << (nTotalTime/nTests) << "ms" << endl;
@@ -414,7 +414,7 @@ BOOST_AUTO_TEST_CASE(deterministic_tests)
     cout << "Checking that mints are deterministic: sha256 checksum=";
     uint256 hash = Hash(ss.begin(), ss.end());
     cout << hash.GetHex() << endl;
-    BOOST_CHECK_MESSAGE(hash == uint256("31891c41a05144c591afff2d8d7b40c5988f9d9a1e2713de224095c2bfbe1fbc"), "minting determinism isn't as expected");
+    BOOST_CHECK_MESSAGE(hash == uint256("b6f5ecf0bf2612c7423b59d25ecd3ac26aab3689daa9983744eea1f375138c51"), "minting determinism isn't as expected");
 
     cout << "Checking that mints are databased correctly:" << endl;
 
@@ -429,7 +429,8 @@ BOOST_AUTO_TEST_CASE(deterministic_tests)
 
     if (!vMints.empty()) {
         CZerocoinMint mint;
-        cout << vMints[0].GetValue().GetHex() << endl;
+
+        //Note: have not been able to get this to work correctly yet.
         BOOST_CHECK_MESSAGE(walletdb.ReadZerocoinMint(vMints[0].GetValue(), mint), "Failed to read mint from wallet db");
         BOOST_CHECK_MESSAGE(mint == vMints[0], "Mint from wallet DB does not match");
     }

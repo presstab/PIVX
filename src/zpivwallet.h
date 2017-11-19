@@ -22,7 +22,7 @@ public:
 private:
     uint512 GetNextZerocoinSeed();
     void UpdateCount();
-    void SeedToZPiv(uint512 seed, CBigNum& bnSerial, CBigNum& bnRandomness);
+    void SeedToZPIV(uint512 seed, CBigNum& bnSerial, CBigNum& bnRandomness);
 };
 
 #endif //PIVX_ZPIVWALLET_H
