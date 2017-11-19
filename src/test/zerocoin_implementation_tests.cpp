@@ -10,7 +10,6 @@
 #include <boost/test/unit_test.hpp>
 #include <iostream>
 #include <accumulators.h>
-#include "wallet.h"
 #include "zpivwallet.h"
 
 using namespace libzerocoin;
@@ -265,7 +264,6 @@ BOOST_AUTO_TEST_CASE(checkzerocoinspend_test)
     BOOST_CHECK_MESSAGE(strError == "Transaction spend more than was redeemed in zerocoins", str);
 }
 
-
 BOOST_AUTO_TEST_CASE(setup_exceptions_test)
 {
     cout << "Running check_unitialized parameters,etc for setup exceptions...\n";
@@ -350,58 +348,22 @@ BOOST_AUTO_TEST_CASE(checksum_tests)
     }
 }
 
-static void add_coin(CWallet* wallet, const CAmount& nValue, int nAge = 6*24, bool fIsFromMe = false, int nInput=0)
-{
-    CMutableTransaction tx;
-
-    tx.vout.resize(nInput+1);
-    CPubKey key = wallet->GenerateNewKey();
-    tx.vout[nInput].scriptPubKey = GetScriptForDestination(key.GetID());
-    tx.vout[nInput].nValue = nValue;
-
-    if (fIsFromMe) {
-        // IsFromMe() returns (GetDebit() > 0), and GetDebit() is 0 if vin.empty(),
-        // so stop vin being empty, and cache a non-zero Debit to fake out IsFromMe()
-        tx.vin.resize(1);
-    }
-    CWalletTx* wtx = new CWalletTx(wallet, tx);
-    if (fIsFromMe)
-    {
-        wtx->fDebitCached = true;
-        wtx->nDebitCached = 1;
-    }
-    wtx->hashBlock = Params().HashGenesisBlock();
-
-    wallet->AddToWallet(*wtx);
-}
-
 BOOST_AUTO_TEST_CASE(deterministic_tests)
 {
-    SelectParams(CBaseChainParams::UNITTEST);
     cout << "Testing deterministic minting\n";
     uint256 seedMaster("3a1947364362e2e7c073b386869c89c905c0cf462448ffd6c2021bd03ce689f6");
-
-    string strWalletFile = "unittestwallet.dat";
-    CWalletDB walletdb(strWalletFile, "cr+");
-
-    CWallet wallet(strWalletFile);
-    CzPIVWallet zWallet(seedMaster, wallet.strWalletFile);
-    wallet.setZWallet(&zWallet);
+    CzPIVWallet zWallet(seedMaster);
 
     int64_t nTimeStart = GetTimeMillis();
     CoinDenomination denom = CoinDenomination::ZQ_FIFTY;
 
     std::vector<PrivateCoin> vCoins;
-    int nTests = 50;
-    for (int i = 0; i < nTests; i++) {
-        PrivateCoin coin(Params().Zerocoin_Params(), denom, false);
-        BOOST_CHECK_MESSAGE(zWallet.GenerateDeterministicZPIV(denom, coin), "failed to generate mint");
-        cout << "Generated " << (i+1) << " mints" << endl;
-        vCoins.emplace_back(coin);
-    }
+    int nNumberOfMints = 100;
+    BOOST_CHECK_MESSAGE(zWallet.GenerateDeterministicZPiv(nNumberOfMints, denom, vCoins), "failed to generate mint");
+    cout << "Generated " << nNumberOfMints << " mints" << endl;
 
     int64_t nTotalTime = GetTimeMillis() - nTimeStart;
-    cout << "Total time:" << nTotalTime << "ms. Per Deterministic Mint:" << (nTotalTime/nTests) << "ms" << endl;
+    cout << "Total time:" << nTotalTime << "ms. Per Deterministic Mint:" << (nTotalTime/100) << "ms" << endl;
 
     cout << "Checking that mints are valid" << endl;
     CDataStream ss(SER_GETHASH, 0);
@@ -414,25 +376,8 @@ BOOST_AUTO_TEST_CASE(deterministic_tests)
     cout << "Checking that mints are deterministic: sha256 checksum=";
     uint256 hash = Hash(ss.begin(), ss.end());
     cout << hash.GetHex() << endl;
-    BOOST_CHECK_MESSAGE(hash == uint256("31891c41a05144c591afff2d8d7b40c5988f9d9a1e2713de224095c2bfbe1fbc"), "minting determinism isn't as expected");
-
-    cout << "Checking that mints are databased correctly:" << endl;
-
-    CWalletTx wtx;
-    vector<CZerocoinMint> vMints;
-    add_coin(&wallet, 1000*COIN);
-
-    BOOST_CHECK_MESSAGE(wallet.GetBalance() != 0, "Failed to add coins to wallet");
-    string strErr = wallet.MintZerocoin(1 * COIN, wtx, vMints);
-    bool fSuccess = strErr == "";
-    BOOST_CHECK_MESSAGE(fSuccess, "CWallet failed to mint a zerocoin. Status: " + strErr);
-
-    if (!vMints.empty()) {
-        CZerocoinMint mint;
-        cout << vMints[0].GetValue().GetHex() << endl;
-        BOOST_CHECK_MESSAGE(walletdb.ReadZerocoinMint(vMints[0].GetValue(), mint), "Failed to read mint from wallet db");
-        BOOST_CHECK_MESSAGE(mint == vMints[0], "Mint from wallet DB does not match");
-    }
+    //    BOOST_CHECK_MESSAGE(hash == uint256("95d89e297fa5911b879929e35f675f02b9c39940c97f569a3b44bef5e6f2580a"), "minting determinism isn't as expected");
+    BOOST_CHECK_MESSAGE(hash == uint256("bf253d07bdaac1b6c86943598918797f4ea6cc9946952985f14b6c2fda9e913d"), "minting determinism isn't as expected");
 }
 
 
