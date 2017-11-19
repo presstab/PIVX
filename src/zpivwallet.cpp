@@ -40,17 +40,18 @@ void CzPIVWallet::SeedToZPiv(uint512 seedZerocoin, CBigNum& bnSerial, CBigNum& b
     uint256 hashRandomness = Hash(randomnessSeed.begin(), randomnessSeed.end(),
                                   attempts256.begin(), attempts256.end());
     bnRandomness.setuint256(hashRandomness);
+    bnRandomness = bnRandomness % params->coinCommitmentGroup.groupOrder;
 
-    // Iterate on Randomness until a valid commitmentValue is found
-    while (true) {
-        bnRandomness = bnRandomness % params->coinCommitmentGroup.groupOrder;
-        
-        //See if serial and randomness make a valid commitment
-        // Generate a Pedersen commitment to the serial number
-        CBigNum commitmentValue = params->coinCommitmentGroup.g.pow_mod(bnSerial, params->coinCommitmentGroup.modulus).mul_mod(
+    //See if serial and randomness make a valid commitment
+    // Generate a Pedersen commitment to the serial number
+    CBigNum commitmentValue = params->coinCommitmentGroup.g.pow_mod(bnSerial, params->coinCommitmentGroup.modulus).mul_mod(
                         params->coinCommitmentGroup.h.pow_mod(bnRandomness, params->coinCommitmentGroup.modulus),
                         params->coinCommitmentGroup.modulus);
 
+    CBigNum BigNumRandomness;
+    // Iterate on Randomness until a valid commitmentValue is found
+    while (true) {
+        
         // Now verify that the commitment is a prime number
         // in the appropriate range. If not, we'll throw this coin
         // away and generate a new one.
@@ -64,7 +65,9 @@ void CzPIVWallet::SeedToZPiv(uint512 seedZerocoin, CBigNum& bnSerial, CBigNum& b
         attempts256++;
         hashRandomness = Hash(randomnessSeed.begin(), randomnessSeed.end(),
                               attempts256.begin(), attempts256.end());
-        bnRandomness.setuint256(hashRandomness);
+        BigNumRandomness.setuint256(hashRandomness);
+        bnRandomness = (bnRandomness + BigNumRandomness) % params->coinCommitmentGroup.groupOrder;
+        commitmentValue = commitmentValue.mul_mod(params->coinCommitmentGroup.h.pow_mod(BigNumRandomness, params->coinCommitmentGroup.modulus), params->coinCommitmentGroup.modulus);
     }
 }
 

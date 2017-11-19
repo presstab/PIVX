@@ -376,7 +376,8 @@ BOOST_AUTO_TEST_CASE(deterministic_tests)
     cout << "Checking that mints are deterministic: sha256 checksum=";
     uint256 hash = Hash(ss.begin(), ss.end());
     cout << hash.GetHex() << endl;
-    BOOST_CHECK_MESSAGE(hash == uint256("95d89e297fa5911b879929e35f675f02b9c39940c97f569a3b44bef5e6f2580a"), "minting determinism isn't as expected");
+    //    BOOST_CHECK_MESSAGE(hash == uint256("95d89e297fa5911b879929e35f675f02b9c39940c97f569a3b44bef5e6f2580a"), "minting determinism isn't as expected");
+    BOOST_CHECK_MESSAGE(hash == uint256("bf253d07bdaac1b6c86943598918797f4ea6cc9946952985f14b6c2fda9e913d"), "minting determinism isn't as expected");
 }
 
 
