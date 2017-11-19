@@ -359,12 +359,9 @@ BOOST_AUTO_TEST_CASE(deterministic_tests)
     CoinDenomination denom = CoinDenomination::ZQ_FIFTY;
 
     std::vector<PrivateCoin> vCoins;
-    for (int i = 0; i < 100; i++) {
-        PrivateCoin coin(Params().Zerocoin_Params(), denom, false);
-        BOOST_CHECK_MESSAGE(zWallet.GenerateDeterministicZPiv(denom, coin), "failed to generate mint");
-        cout << "Generated " << (i+1) << " mints" << endl;
-        vCoins.emplace_back(coin);
-    }
+    int nNumberOfMints = 100;
+    BOOST_CHECK_MESSAGE(zWallet.GenerateDeterministicZPiv(nNumberOfMints, denom, vCoins), "failed to generate mint");
+    cout << "Generated " << nNumberOfMints << " mints" << endl;
 
     int64_t nTotalTime = GetTimeMillis() - nTimeStart;
     cout << "Total time:" << nTotalTime << "ms. Per Deterministic Mint:" << (nTotalTime/100) << "ms" << endl;
