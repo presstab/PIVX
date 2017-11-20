@@ -1445,7 +1445,7 @@ bool AppInit2(boost::thread_group& threadGroup)
     fFeeEstimatesInitialized = true;
 
 // ********************************************************* Step 8: load wallet
-//#ifdef ENABLE_WALLET
+#ifdef ENABLE_WALLET
     if (fDisableWallet) {
         pwalletMain = NULL;
         zwalletMain = NULL;
@@ -1569,20 +1569,18 @@ bool AppInit2(boost::thread_group& threadGroup)
 
         //Inititalize zPIVWallet
         uint256 seed = 0;
-        if (!CWalletDB(pwalletMain->strWalletFile).ReadZPIVSeed(seed)) {
-            seed = CBigNum::randBignum(CBigNum(~uint256(0))).getuint256();
-            if (!CWalletDB(pwalletMain->strWalletFile).WriteZPIVSeed(seed))
-                return InitError(_("failed to write master seed for zPIV wallet"));
-        }
-        zwalletMain = new CzPIVWallet(seed, pwalletMain->strWalletFile);
+        bool fFirstRunZWallet = !CWalletDB(pwalletMain->strWalletFile).ReadZPIVSeed(seed);
+        zwalletMain = new CzPIVWallet(pwalletMain->strWalletFile, fFirstRunZWallet);
+        zwalletMain->SyncWithChain();
+
         pwalletMain->setZWallet(zwalletMain);
 
         bool fEnableZPivBackups = GetBoolArg("-backupzpiv", true);
         pwalletMain->setZPivAutoBackups(fEnableZPivBackups);
     }  // (!fDisableWallet)
-//#else  // ENABLE_WALLET
-//    LogPrintf("No wallet compiled in!\n");
-//#endif // !ENABLE_WALLET
+#else  // ENABLE_WALLET
+    LogPrintf("No wallet compiled in!\n");
+#endif // !ENABLE_WALLET
     // ********************************************************* Step 9: import blocks
 
     if (mapArgs.count("-blocknotify"))
