@@ -8,6 +8,8 @@
 #include "libzerocoin/Coin.h"
 #include "uint256.h"
 
+class CZerocoinMint;
+
 class CzPIVWallet
 {
 private:
@@ -16,12 +18,15 @@ private:
     std::string strWalletFile;
     bool fFirstRun;
     const uint8_t nVersion = 1;
+    CBigNum bnNextMintValue;
 
 public:
     CzPIVWallet(std::string strWalletFile, bool fFirstRun);
     bool SetMasterSeed(const uint256& seedMaster);
     void SyncWithChain();
     void GenerateDeterministicZPIV(libzerocoin::CoinDenomination denom, libzerocoin::PrivateCoin& coin, bool fGenerateOnly = false);
+    bool IsNextMint(const CBigNum& bnValue);
+    bool AddMint(CZerocoinMint mint, uint256 txHash, int nHeight = 0);
 
 private:
     uint512 GetNextZerocoinSeed();
