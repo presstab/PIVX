@@ -1322,8 +1322,16 @@ bool CheckZerocoinMint(const uint256& txHash, const CTxOut& txout, CValidationSt
     if (!pubCoin.validate())
         return state.DoS(100, error("CheckZerocoinMint() : PubCoin does not validate"));
 
-    if(!fCheckOnly && !RecordMintToDB(pubCoin, txHash))
+    if (!fCheckOnly && !RecordMintToDB(pubCoin, txHash))
         return state.DoS(100, error("CheckZerocoinMint(): RecordMintToDB() failed"));
+
+    if (zwalletMain) {
+        if (zwalletMain->IsNextMint(pubCoin.getValue())) {
+            CZerocoinMint mint(pubCoin.getDenomination(), pubCoin.getValue(), CBigNum(0), CBigNum(0), false);
+            zwalletMain->AddMint(mint, txHash);
+        }
+
+    }
 
     return true;
 }

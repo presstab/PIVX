@@ -55,10 +55,9 @@ void CzPIVWallet::SyncWithChain()
         GenerateDeterministicZPIV(CoinDenomination::ZQ_ONE, coin, true);
 
         uint256 txHash;
-        if(zerocoinDB->ReadCoinMint(coin.getPublicCoin().getValue(), txHash)) {
+        if (zerocoinDB->ReadCoinMint(coin.getPublicCoin().getValue(), txHash)) {
             //this mint has already occured on the chain, increment counter's state to reflect this
             LogPrintf("%s : Found used coin mint %s \n", __func__, coin.getPublicCoin().getValue().GetHex());
-            UpdateCount();
 
             uint256 hashBlock;
             CTransaction tx;
@@ -88,15 +87,39 @@ void CzPIVWallet::SyncWithChain()
             }
 
             CZerocoinMint mint(denomination, coin.getPublicCoin().getValue(), coin.getRandomness(), coin.getSerialNumber(), false);
-            mint.SetTxHash(txHash);
-            mint.SetHeight(mapBlockIndex.at(hashBlock)->nHeight);
+            int nHeight = 0;
+            if (mapBlockIndex.count(hashBlock))
+                nHeight = mapBlockIndex.at(hashBlock)->nHeight;
 
-            if (!CWalletDB(strWalletFile).WriteZerocoinMint(mint))
-                LogPrintf("%s : failed to database mint %s!\n", __func__, coin.getPublicCoin().getValue());
+            AddMint(mint, txHash, nHeight);
+            UpdateCount();
         } else {
+            bnNextMintValue = coin.getPublicCoin().getValue();
             break;
         }
     }
+}
+
+bool CzPIVWallet::AddMint(CZerocoinMint mint, uint256 txHash, int nHeight)
+{
+    mint.SetTxHash(txHash);
+    mint.SetHeight(nHeight);
+
+    if (mint.GetSerialNumber() == 0) {
+        CBigNum bnSerial;
+        CBigNum bnRandomness;
+        SeedToZPIV(GetNextZerocoinSeed(), bnSerial, bnRandomness);
+        mint.SetSerialNumber(bnSerial);
+        mint.SetRandomness(bnRandomness);
+        UpdateCount();
+    }
+
+    if (!CWalletDB(strWalletFile).WriteZerocoinMint(mint)) {
+        LogPrintf("%s : failed to database mint %s!\n", __func__, mint.GetValue().GetHex());
+        return false;
+    }
+
+    return true;
 }
 
 // Check if the value of the commitment meets requirements
@@ -187,4 +210,9 @@ void CzPIVWallet::GenerateDeterministicZPIV(CoinDenomination denom, PrivateCoin&
 
     //set to the next count
     UpdateCount();
+}
+
+bool CzPIVWallet::IsNextMint(const CBigNum& bnValue)
+{
+    return bnValue == bnNextMintValue;
 }
