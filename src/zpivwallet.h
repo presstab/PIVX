@@ -14,10 +14,14 @@ private:
     uint256 seedMaster;
     uint32_t nCount;
     std::string strWalletFile;
+    bool fFirstRun;
+    const uint8_t nVersion = 1;
 
 public:
-    explicit CzPIVWallet(uint256 seedMaster, std::string strWalletFile);
-    bool GenerateDeterministicZPIV(libzerocoin::CoinDenomination denom, libzerocoin::PrivateCoin& coin);
+    CzPIVWallet(std::string strWalletFile, bool fFirstRun);
+    bool SetMasterSeed(const uint256& seedMaster);
+    void SyncWithChain();
+    void GenerateDeterministicZPIV(libzerocoin::CoinDenomination denom, libzerocoin::PrivateCoin& coin, bool fGenerateOnly = false);
 
 private:
     uint512 GetNextZerocoinSeed();

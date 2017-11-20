@@ -4,17 +4,99 @@
 
 #include "zpivwallet.h"
 #include "main.h"
+#include "txdb.h"
 #include "walletdb.h"
 
 using namespace libzerocoin;
 
-CzPIVWallet::CzPIVWallet(uint256 seedMaster, string strWalletFile)
+
+CzPIVWallet::CzPIVWallet(std::string strWalletFile, bool fFirstRun)
+{
+    this->strWalletFile = strWalletFile;
+    CWalletDB walletdb(strWalletFile);
+
+    uint256 seed;
+    if (!walletdb.ReadZPIVSeed(seed))
+        fFirstRun = true;
+
+    //First time running, generate master seed
+    if (fFirstRun) {
+        seedMaster = CBigNum::randBignum(CBigNum(~uint256(0))).getuint256();
+        walletdb.WriteZPIVSeed(seedMaster);
+        nCount = 0;
+        return;
+    }
+
+    SetMasterSeed(seed);
+}
+
+bool CzPIVWallet::SetMasterSeed(const uint256& seedMaster)
 {
     this->seedMaster = seedMaster;
-    this->strWalletFile = strWalletFile;
+
+    if (!CWalletDB(strWalletFile).WriteZPIVSeed(seedMaster))
+        return false;
 
     if (!CWalletDB(strWalletFile).ReadZPIVCount(nCount))
         nCount = 0;
+
+    //TODO remove this leak of seed from logs before merge to master
+    LogPrintf("%s : seed=%s count=%d\n", __func__, seedMaster.GetHex().substr(0, 4), nCount);
+
+    return true;
+}
+
+//Catch the counter up with the chain
+void CzPIVWallet::SyncWithChain()
+{
+    //Create the next mint and see if the commitment value is on the chain
+    while (true) {
+        PrivateCoin coin(Params().Zerocoin_Params(), CoinDenomination::ZQ_ONE, false);
+        GenerateDeterministicZPIV(CoinDenomination::ZQ_ONE, coin, true);
+
+        uint256 txHash;
+        if(zerocoinDB->ReadCoinMint(coin.getPublicCoin().getValue(), txHash)) {
+            //this mint has already occured on the chain, increment counter's state to reflect this
+            LogPrintf("%s : Found used coin mint %s \n", __func__, coin.getPublicCoin().getValue().GetHex());
+            UpdateCount();
+
+            uint256 hashBlock;
+            CTransaction tx;
+            if (!GetTransaction(txHash, tx, hashBlock)) {
+                LogPrintf("%s : failed to get transaction for mint %s!\n", __func__, coin.getPublicCoin().getValue().GetHex());
+                continue;
+            }
+
+            //Find the denomination
+            CoinDenomination denomination = CoinDenomination::ZQ_ERROR;
+            for (const CTxOut out : tx.vout) {
+                if (!out.scriptPubKey.IsZerocoinMint())
+                    continue;
+
+                PublicCoin pubcoin(Params().Zerocoin_Params());
+                CValidationState state;
+                if (!TxOutToPublicCoin(out, pubcoin, state)) {
+                    LogPrintf("%s : failed to get mint from txout for %s!\n", __func__, coin.getPublicCoin().getValue().GetHex());
+                    continue;
+                }
+                denomination = pubcoin.getDenomination();
+            }
+
+            if (denomination == ZQ_ERROR) {
+                LogPrintf("%s : failed to get mint %s from tx %s!\n", __func__, coin.getPublicCoin().getValue(), tx.GetHash().GetHex());
+                continue;
+            }
+
+            CZerocoinMint mint(denomination, coin.getPublicCoin().getValue(), coin.getRandomness(), coin.getSerialNumber(), false);
+            mint.SetTxHash(txHash);
+            mint.SetHeight(mapBlockIndex.at(hashBlock)->nHeight);
+
+            if (!CWalletDB(strWalletFile).WriteZerocoinMint(mint))
+                LogPrintf("%s : failed to database mint %s!\n", __func__, coin.getPublicCoin().getValue());
+        } else {
+            break;
+        }
+    }
 }
 
 // Check if the value of the commitment meets requirements
@@ -87,17 +169,22 @@ void CzPIVWallet::UpdateCount()
     walletdb.WriteZPIVCount(nCount);
 }
 
-bool CzPIVWallet::GenerateDeterministicZPIV(CoinDenomination denom, PrivateCoin& coin)
+void CzPIVWallet::GenerateDeterministicZPIV(CoinDenomination denom, PrivateCoin& coin, bool fGenerateOnly)
 {
     uint512 seedZerocoin = GetNextZerocoinSeed();
+
+    //TODO remove this leak of seed from logs before merge to master
+    if (!fGenerateOnly)
+        LogPrintf("%s : Generated new deterministic mint. Count=%d seed=%s\n", __func__, nCount, seedZerocoin.GetHex().substr(0, 4));
 
     CBigNum bnSerial;
     CBigNum bnRandomness;
     SeedToZPIV(seedZerocoin, bnSerial, bnRandomness);
     coin = PrivateCoin(Params().Zerocoin_Params(), denom, bnSerial, bnRandomness);
 
+    if (fGenerateOnly)
+        return;
+
     //set to the next count
     UpdateCount();
-
-    return true;
 }

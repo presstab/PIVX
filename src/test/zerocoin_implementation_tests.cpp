@@ -385,7 +385,8 @@ BOOST_AUTO_TEST_CASE(deterministic_tests)
     CWalletDB walletdb(strWalletFile, "cr+");
 
     CWallet wallet(strWalletFile);
-    CzPIVWallet zWallet(seedMaster, wallet.strWalletFile);
+    CzPIVWallet zWallet(wallet.strWalletFile, false);
+    zWallet.SetMasterSeed(seedMaster);
     wallet.setZWallet(&zWallet);
 
     int64_t nTimeStart = GetTimeMillis();
@@ -395,7 +396,7 @@ BOOST_AUTO_TEST_CASE(deterministic_tests)
     int nTests = 50;
     for (int i = 0; i < nTests; i++) {
         PrivateCoin coin(Params().Zerocoin_Params(), denom, false);
-        BOOST_CHECK_MESSAGE(zWallet.GenerateDeterministicZPIV(denom, coin), "failed to generate mint");
+        zWallet.GenerateDeterministicZPIV(denom, coin);
         vCoins.emplace_back(coin);
     }
     cout << "Generated " << vCoins.size() << " mints" << endl;

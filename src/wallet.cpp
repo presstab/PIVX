@@ -3990,10 +3990,8 @@ bool CWallet::CreateZerocoinMintTransaction(const CAmount nValue, CMutableTransa
 
         // mint a new coin (create Pedersen Commitment) and extract PublicCoin that is shareable from it
         libzerocoin::PrivateCoin newCoin(Params().Zerocoin_Params(), denomination, false);
-        if (!zwalletMain->GenerateDeterministicZPIV(denomination, newCoin)) {
-            strFailReason = _("failed to generate deterministic zPIV");
-            return false;
-        }
+        zwalletMain->GenerateDeterministicZPIV(denomination, newCoin);
+
         libzerocoin::PublicCoin pubCoin = newCoin.getPublicCoin();
 
         // Validate
