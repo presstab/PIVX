@@ -6,6 +6,7 @@
 #include "coins.h"
 
 #include "random.h"
+#include "util.h"
 
 #include <assert.h>
 
@@ -35,10 +36,16 @@ void CCoins::CalcMaskSize(unsigned int& nBytes, unsigned int& nNonzeroBytes) con
 
 bool CCoins::Spend(const COutPoint& out, CTxInUndo& undo)
 {
-    if (out.n >= vout.size())
+    if (out.n >= vout.size()) {
+        LogPrintf("line 40 \n");
         return false;
-    if (vout[out.n].IsNull())
+    }
+
+    if (vout[out.n].IsNull()) {
+        LogPrintf("line 45 \n");
         return false;
+    }
+
     undo = CTxInUndo(vout[out.n]);
     vout[out.n].SetNull();
     Cleanup();
