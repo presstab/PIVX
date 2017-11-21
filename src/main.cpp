@@ -2772,7 +2772,7 @@ void PopulateInvalidOutPointMap()
             }
         }
 
-        if (pindex->nHeight >= Params().Zerocoin_Block_RecalculateAccumulators())
+        if (pindex->nHeight > Params().Zerocoin_Block_RecalculateAccumulators())
             fListPopulatedAfterLock = true;
     }
 }
@@ -2899,6 +2899,65 @@ bool CheckInputs(const CTransaction& tx, CValidationState& state, const CCoinsVi
     }
 
     return true;
+}
+
+bool DisconnectCoins(CTransaction tx, int posTx, CCoinsViewCache& view, CBlockUndo blockUndo, int nHeight)
+{
+    bool fClean = false;
+    uint256 hash = tx.GetHash();
+
+    // Check that all outputs are available and match the outputs in the block itself
+    // exactly. Note that transactions with only provably unspendable outputs won't
+    // have outputs available even in the block itself, so we handle that case
+    // specially with outsEmpty.
+    {
+        CCoins outsEmpty;
+        CCoinsModifier outs = view.ModifyCoins(hash);
+        outs->ClearUnspendable();
+
+        CCoins outsBlock(tx, nHeight);
+        // The CCoins serialization does not serialize negative numbers.
+        // No network rules currently depend on the version here, so an inconsistency is harmless
+        // but it must be corrected before txout nversion ever influences a network rule.
+        if (outsBlock.nVersion < 0)
+            outs->nVersion = outsBlock.nVersion;
+        if (*outs != outsBlock)
+            fClean = fClean && error("DisconnectBlock() : added transaction mismatch? database corrupted");
+
+        // remove outputs
+        outs->Clear();
+    }
+
+    // restore inputs
+    if (!tx.IsCoinBase() && !tx.IsZerocoinSpend()) { // not coinbases or zerocoinspend because they dont have traditional inputs
+        const CTxUndo& txundo = blockUndo.vtxundo[posTx - 1];
+        if (txundo.vprevout.size() != tx.vin.size())
+            return error("DisconnectBlock() : transaction and undo data inconsistent - txundo.vprevout.siz=%d tx.vin.siz=%d", txundo.vprevout.size(), tx.vin.size());
+        for (unsigned int j = tx.vin.size(); j-- > 0;) {
+            const COutPoint& out = tx.vin[j].prevout;
+            const CTxInUndo& undo = txundo.vprevout[j];
+            CCoinsModifier coins = view.ModifyCoins(out.hash);
+            if (undo.nHeight != 0) {
+                // undo data contains height: this is the last output of the prevout tx being spent
+                if (!coins->IsPruned())
+                    fClean = fClean && error("DisconnectBlock() : undo data overwriting existing transaction");
+                coins->Clear();
+                coins->fCoinBase = undo.fCoinBase;
+                coins->nHeight = undo.nHeight;
+                coins->nVersion = undo.nVersion;
+            } else {
+                if (coins->IsPruned())
+                    fClean = fClean && error("DisconnectBlock() : undo data adding output to missing transaction");
+            }
+            if (coins->IsAvailable(out.n))
+                fClean = fClean && error("DisconnectBlock() : undo data overwriting existing output");
+            if (coins->vout.size() < out.n + 1)
+                coins->vout.resize(out.n + 1);
+            coins->vout[out.n] = undo.txout;
+        }
+    }
+
+    return fClean;
 }
 
 bool DisconnectBlock(CBlock& block, CValidationState& state, CBlockIndex* pindex, CCoinsViewCache& view, bool* pfClean)
@@ -3508,43 +3567,42 @@ bool ConnectBlock(const CBlock& block, CValidationState& state, CBlockIndex* pin
     // zerocoin accumulator: if a new accumulator checkpoint was generated, check that it is the correct value
     if (!fVerifyingBlocks && pindex->nHeight >= Params().Zerocoin_StartHeight() && pindex->nHeight % 10 == 0) {
         uint256 nCheckpointCalculated = 0;
-        if (!CalculateAccumulatorCheckpoint(pindex->nHeight, nCheckpointCalculated)) {
 
+        // if IDB, invalid outpoints must be calculated or else acc checkpoint will be incorrect
+        if (pindex->nHeight == Params().Zerocoin_Block_RecalculateAccumulators())
+            PopulateInvalidOutPointMap();
+
+        if (!CalculateAccumulatorCheckpoint(pindex->nHeight, nCheckpointCalculated)) {
             int nStop = Params().Zerocoin_Block_RecalculateAccumulators() + 20;
             if (pindex->nHeight < nStop && pindex->nHeight > Params().Zerocoin_Block_LastGoodCheckpoint()) {
-                LogPrintf("%s : Checkpoint not found for block %d, recalculating accumulators\n", __func__, pindex->nHeight);
-
                 //Calculate list of checkpoints that may be missing due to deletion on block 809000
-                list<uint256> listMissingCheckpoints;
+                LogPrintf("%s : Checkpoint not found for block %d, recalculating accumulators\n", __func__, pindex->nHeight);
                 CBlockIndex* pindexCheckpoint = chainActive[Params().Zerocoin_Block_LastGoodCheckpoint()];
-                while (true) {
-                    if (!count(listMissingCheckpoints.begin(), listMissingCheckpoints.end(), pindexCheckpoint->nAccumulatorCheckpoint))
-                        listMissingCheckpoints.emplace_back(pindexCheckpoint->nAccumulatorCheckpoint);
+                list<uint256> listCheckpoints;
+                while (pindexCheckpoint->nHeight <= nStop) {
+                    if (!count(listCheckpoints.begin(), listCheckpoints.end(), pindexCheckpoint->nAccumulatorCheckpoint))
+                        listCheckpoints.emplace_back(pindexCheckpoint->nAccumulatorCheckpoint);
 
-                    if (pindexCheckpoint->nHeight < nStop && pindexCheckpoint->nHeight < chainActive.Height())
-                        pindexCheckpoint = chainActive.Next(pindexCheckpoint);
-                    else
+                    pindexCheckpoint = chainActive.Next(pindexCheckpoint);
+                    if (!pindexCheckpoint)
                         break;
                 }
 
                 string strError;
-                if (!ReindexAccumulators(listMissingCheckpoints, strError)) {
+                if (!ReindexAccumulators(listCheckpoints, strError) || !CalculateAccumulatorCheckpoint(pindex->nHeight, nCheckpointCalculated))
                     return state.DoS(100, error("ConnectBlock() : failed to recalculate accumulator checkpoint"));
-                }
             } else {
                 return state.DoS(100, error("ConnectBlock() : failed to calculate accumulator checkpoint"));
             }
         }
-
 
         if (nCheckpointCalculated != block.nAccumulatorCheckpoint) {
             LogPrintf("%s: block=%d calculated: %s\n block: %s\n", __func__, pindex->nHeight, nCheckpointCalculated.GetHex(), block.nAccumulatorCheckpoint.GetHex());
             return state.DoS(100, error("ConnectBlock() : accumulator does not match calculated value"));
         }
     } else if (!fVerifyingBlocks) {
-        if (block.nAccumulatorCheckpoint != pindex->pprev->nAccumulatorCheckpoint) {
+        if (block.nAccumulatorCheckpoint != pindex->pprev->nAccumulatorCheckpoint)
             return state.DoS(100, error("ConnectBlock() : new accumulator checkpoint generated on a block that is not multiple of 10"));
-        }
     }
 
     if (!control.Wait())
@@ -4716,9 +4774,22 @@ bool AcceptBlockHeader(const CBlock& block, CValidationState& state, CBlockIndex
         if (mi == mapBlockIndex.end())
             return state.DoS(0, error("%s : prev block %s not found", __func__, block.hashPrevBlock.ToString().c_str()), 0, "bad-prevblk");
         pindexPrev = (*mi).second;
-        if (pindexPrev->nStatus & BLOCK_FAILED_MASK)
-            return state.DoS(100, error("%s : prev block %s is invalid, unable to add block %s", __func__, block.hashPrevBlock.GetHex(), block.GetHash().GetHex()),
+        if (pindexPrev->nStatus & BLOCK_FAILED_MASK) {
+            //If this "invalid" block is an exact match from the checkpoints, then reconsider it
+            if (Checkpoints::CheckBlock(pindex->nHeight - 1, block.hashPrevBlock, true)) {
+                LogPrintf("%s : Reconsidering block %s height %d\n", __func__, pindexPrev->GetBlockHash().GetHex(), pindexPrev->nHeight);
+                CValidationState statePrev;
+                ReconsiderBlock(statePrev, pindexPrev);
+                if (statePrev.IsValid()) {
+                    ActivateBestChain(statePrev);
+                    return true;
+                }
+            }
+
+            return state.DoS(100, error("%s : prev block height=%d hash=%s is invalid, unable to add block %s", __func__, pindexPrev->nHeight, block.hashPrevBlock.GetHex(), block.GetHash().GetHex()),
                              REJECT_INVALID, "bad-prevblk");
+        }
+
     }
 
     if (!ContextualCheckBlockHeader(block, state, pindexPrev))
@@ -4746,9 +4817,20 @@ bool AcceptBlock(CBlock& block, CValidationState& state, CBlockIndex** ppindex, 
         if (mi == mapBlockIndex.end())
             return state.DoS(0, error("%s : prev block %s not found", __func__, block.hashPrevBlock.ToString().c_str()), 0, "bad-prevblk");
         pindexPrev = (*mi).second;
-        if (pindexPrev->nStatus & BLOCK_FAILED_MASK)
+        if (pindexPrev->nStatus & BLOCK_FAILED_MASK) {
+            //If this "invalid" block is an exact match from the checkpoints, then reconsider it
+            if (Checkpoints::CheckBlock(pindexPrev->nHeight, block.hashPrevBlock, true)) {
+                LogPrintf("%s : Reconsidering block %s height %d\n", __func__, pindexPrev->GetBlockHash().GetHex(), pindexPrev->nHeight);
+                CValidationState statePrev;
+                ReconsiderBlock(statePrev, pindexPrev);
+                if (statePrev.IsValid()) {
+                    ActivateBestChain(statePrev);
+                    return true;
+                }
+            }
             return state.DoS(100, error("%s : prev block %s is invalid, unable to add block %s", __func__, block.hashPrevBlock.GetHex(), block.GetHash().GetHex()),
                              REJECT_INVALID, "bad-prevblk");
+        }
     }
 
     if (block.GetHash() != Params().HashGenesisBlock() && !CheckWork(block, pindexPrev))
@@ -5062,7 +5144,7 @@ bool static LoadBlockIndexDB()
     // Calculate nChainWork
     vector<pair<int, CBlockIndex*> > vSortedByHeight;
     vSortedByHeight.reserve(mapBlockIndex.size());
-    BOOST_FOREACH (const PAIRTYPE(uint256, CBlockIndex*) & item, mapBlockIndex) {
+    for (const PAIRTYPE(uint256, CBlockIndex*) & item : mapBlockIndex) {
         CBlockIndex* pindex = item.second;
         vSortedByHeight.push_back(make_pair(pindex->nHeight, pindex));
     }
@@ -5112,7 +5194,7 @@ bool static LoadBlockIndexDB()
     // Check presence of blk files
     LogPrintf("Checking all blk files are present...\n");
     set<int> setBlkDataFiles;
-    BOOST_FOREACH (const PAIRTYPE(uint256, CBlockIndex*) & item, mapBlockIndex) {
+    for (const PAIRTYPE(uint256, CBlockIndex*) & item : mapBlockIndex) {
         CBlockIndex* pindex = item.second;
         if (pindex->nStatus & BLOCK_HAVE_DATA) {
             setBlkDataFiles.insert(pindex->nFile);
@@ -5131,25 +5213,28 @@ bool static LoadBlockIndexDB()
     LogPrintf("%s: Last shutdown was prepared: %s\n", __func__, fLastShutdownWasPrepared);
 
     //Check for inconsistency with block file info and internal state
-    if (!fLastShutdownWasPrepared && !GetBoolArg("-forcestart", false) && !GetBoolArg("-reindex", false) && (vSortedByHeight.size() != vinfoBlockFile[nLastBlockFile].nHeightLast + 1) && (vinfoBlockFile[nLastBlockFile].nHeightLast != 0)) {
+    if (!fLastShutdownWasPrepared && !GetBoolArg("-forcestart", false) && !GetBoolArg("-reindex", false) && pcoinsTip->GetBestBlock() != vSortedByHeight[vinfoBlockFile[nLastBlockFile].nHeightLast + 1].second->GetBlockHash()) {
         //The database is in a state where a block has been accepted and written to disk, but not
         //all of the block has perculated through the code. The block and the index should both be
         //intact (although assertions are added if they are not), and the block will be reprocessed
         //to ensure all data will be accounted for.
         LogPrintf("%s: Inconsistent State Detected mapBlockIndex.size()=%d blockFileBlocks=%d\n", __func__, vSortedByHeight.size(), vinfoBlockFile[nLastBlockFile].nHeightLast + 1);
-        LogPrintf("%s: lastIndexPos=%d blockFileSize=%d\n", __func__, vSortedByHeight[vSortedByHeight.size() - 1].second->GetBlockPos().nPos,
-            vinfoBlockFile[nLastBlockFile].nSize);
+        LogPrintf("%s: lastIndexPos=%d blockFileSize=%d\n", __func__, vSortedByHeight[vSortedByHeight.size() - 1].second->GetBlockPos().nPos, vinfoBlockFile[nLastBlockFile].nSize);
+
+        if (!mapBlockIndex.count(pcoinsTip->GetBestBlock())) {
+            uiInterface.ThreadSafeMessageBox("Transaction database does not match the block database. Restart using -reindex.", "", CClientUIInterface::MSG_ERROR);
+            abort();
+        }
+        LogPrintf("%s : pcoinstip=%d\n", __func__, mapBlockIndex[pcoinsTip->GetBestBlock()]->nHeight);
 
         //try reading the block from the last index we have
-        bool isFixed = true;
         string strError = "";
-        LogPrintf("%s: Attempting to re-add last block that was recorded to disk\n", __func__);
 
         //get the last block that was properly recorded to the block info file
         CBlockIndex* pindexLastMeta = vSortedByHeight[vinfoBlockFile[nLastBlockFile].nHeightLast + 1].second;
         CBlockIndex* pindex;
         int nSortedPos = 0;
-        for (int i = 0; i < vSortedByHeight.size(); i++) {
+        for (unsigned int i = 0; i < vSortedByHeight.size(); i++) {
             nSortedPos = i;
             if (vSortedByHeight[i].first == mapBlockIndex[pcoinsTip->GetBestBlock()]->nHeight +1) {
                 pindex = vSortedByHeight[i].second;
@@ -5161,97 +5246,32 @@ bool static LoadBlockIndexDB()
 
         CCoinsViewCache view(pcoinsTip);
         while (true) {
-            LogPrintf("block %d\n", pindex->nHeight);
             CBlock block;
             assert(ReadBlockFromDisk(block, pindex));
 
-            uint256 hashBlock = block.GetHash();
-            int i = 0;
             vector<CTxUndo> vtxundo;
             vtxundo.reserve(block.vtx.size() - 1);
-            for (CTransaction tx : block.vtx) {
+            uint256 hashBlock = block.GetHash();
+            for (unsigned int i = 0; i < block.vtx.size(); i++) {
                 CValidationState state;
                 CTxUndo undoDummy;
-                if (i > 0) {
+                if (i > 0)
                     vtxundo.push_back(CTxUndo());
-                }
-                UpdateCoins(tx, state, view, i == 0 ? undoDummy : vtxundo.back(), pindex->nHeight);
+                UpdateCoins(block.vtx[i], state, view, i == 0 ? undoDummy : vtxundo.back(), pindex->nHeight);
                 view.SetBestBlock(hashBlock);
             }
-            i++;
+
             if (pindex->nHeight >= pindexLastMeta->nHeight)
                 break;
             nSortedPos++;
             pindex = vSortedByHeight[nSortedPos].second;
-
         }
 
-        view.Flush();
-
-        //pcoinsTip->SetBestBlock(pindexLastMeta->GetBlockHash());
-
-        //fix Assertion `hashPrevBlock == view.GetBestBlock()' failed. By adjusting height to the last recorded by coinsview
-//        CBlockIndex* pindexCoinsView = mapBlockIndex[pcoinsTip->GetBestBlock()];
-//        for(unsigned int i = vinfoBlockFile[nLastBlockFile].nHeightLast + 1; i < vSortedByHeight.size(); i++)
-//        {
-//            pindexLastMeta = vSortedByHeight[i].second;
-//            if(pindexLastMeta->nHeight > pindexCoinsView->nHeight)
-//                break;
-//        }
+        if (!view.Flush() || !pcoinsTip->Flush())
+            LogPrintf("%s : failed to flush view\n", __func__);
 
         LogPrintf("%s: Last block properly recorded: #%d %s\n", __func__, pindexLastMeta->nHeight, pindexLastMeta->GetBlockHash().ToString().c_str());
-        LogPrintf("%s : pcoinstip=%d\n", __func__, mapBlockIndex[pcoinsTip->GetBestBlock()]->nHeight);
-        //LogPrintf("%s : chainActive=%d\n", __func__, mapBlockIndex[pcoinsTip->GetBestBlock()]->nHeight);
-
-//        CBlock lastMetaBlock;
-//        if (!ReadBlockFromDisk(lastMetaBlock, pindexLastMeta)) {
-//            isFixed = false;
-//            strError = strprintf("failed to read block %d from disk", pindexLastMeta->nHeight);
-//        }
-//
-//        //set the chain to the block before lastMeta so that the meta block will be seen as new
-//        chainActive.SetTip(pindexLastMeta->pprev);
-//
-//        //Process the lastMetaBlock again, using the known location on disk
-//        CDiskBlockPos blockPos = pindexLastMeta->GetBlockPos();
-//        CValidationState state;
-//        ProcessNewBlock(state, NULL, &lastMetaBlock, &blockPos);
-//
-//        //ensure that everything is as it should be
-//        if (pcoinsTip->GetBestBlock() != vSortedByHeight[vSortedByHeight.size() - 1].second->GetBlockHash()) {
-//            isFixed = false;
-//            strError = "pcoinsTip best block is not correct";
-//        }
-//
-//        //properly account for all of the blocks that were not in the meta data. If this is not done the file
-//        //positioning will be wrong and blocks will be overwritten and later cause serialization errors
-//        CBlockIndex *pindexLast = vSortedByHeight[vSortedByHeight.size() - 1].second;
-//        CBlock lastBlock;
-//        if (!ReadBlockFromDisk(lastBlock, pindexLast)) {
-//            isFixed = false;
-//            strError = strprintf("failed to read block %d from disk", pindexLast->nHeight);
-//        }
-//        vinfoBlockFile[nLastBlockFile].nHeightLast = pindexLast->nHeight;
-//        vinfoBlockFile[nLastBlockFile].nSize = pindexLast->GetBlockPos().nPos + ::GetSerializeSize(lastBlock, SER_DISK, CLIENT_VERSION);;
-//        setDirtyFileInfo.insert(nLastBlockFile);
-//        FlushStateToDisk(state, FLUSH_STATE_ALWAYS);
-//
-//        //Print out file info again
-//        pblocktree->ReadLastBlockFile(nLastBlockFile);
-//        vinfoBlockFile.resize(nLastBlockFile + 1);
-//        LogPrintf("%s: last block file = %i\n", __func__, nLastBlockFile);
-//        for (int nFile = 0; nFile <= nLastBlockFile; nFile++) {
-//            pblocktree->ReadBlockFileInfo(nFile, vinfoBlockFile[nFile]);
-//        }
-//        LogPrintf("%s: last block file info: %s\n", __func__, vinfoBlockFile[nLastBlockFile].ToString());
-//
-//        if (!isFixed) {
-//            strError = "Failed reading from database. " + strError + ". The block database is in an inconsistent state and may cause issues in the future."
-//                                                                     "To force start use -forcestart";
-//            uiInterface.ThreadSafeMessageBox(strError, "", CClientUIInterface::MSG_ERROR);
-//            abort();
-//        }
-//        LogPrintf("Passed corruption fix\n");
+        LogPrintf("%s : pcoinstip=%d %s\n", __func__, mapBlockIndex[pcoinsTip->GetBestBlock()]->nHeight, pcoinsTip->GetBestBlock().GetHex());
     }
 
     // Check whether we need to continue reindexing
