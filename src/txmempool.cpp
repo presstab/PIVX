@@ -409,7 +409,10 @@ bool CTxMemPool::addUnchecked(const uint256& hash, const CTxMemPoolEntry& entry)
     // all the appropriate checks.
     LOCK(cs);
     {
-        mapTx[hash] = entry;
+	if (mapTx.count(hash))        
+		mapTx[hash] = entry;
+	else
+		mapTx.insert(make_pair(hash, entry));
         const CTransaction& tx = mapTx[hash].GetTx();
         if(!tx.IsZerocoinSpend()) {
             for (unsigned int i = 0; i < tx.vin.size(); i++)

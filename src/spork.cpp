@@ -99,7 +99,13 @@ void ProcessSpork(CNode* pfrom, std::string& strCommand, CDataStream& vRecv)
             return;
         }
 
-        mapSporks[hash] = spork;
+	if (!mapSporks.count(hash)) {
+            mapSporks.insert(make_pair(hash, spork));
+        } else {
+            mapSporks[hash] = spork;
+        }
+
+        //mapSporks[hash] = spork;
         mapSporksActive[spork.nSporkID] = spork;
         sporkManager.Relay(spork);
 
