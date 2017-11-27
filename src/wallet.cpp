@@ -736,7 +736,8 @@ bool CWallet::AddToWallet(const CWalletTx& wtxIn, bool fFromLoadWallet)
         }
 
         //// debug print
-        LogPrintf("AddToWallet %s  %s%s\n", wtxIn.GetHash().ToString(), (fInsertedNew ? "new" : ""), (fUpdated ? "update" : ""));
+
+        LogPrintf("AddToWallet %s  size=%d %s%s\n", wtxIn.GetHash().ToString(), wtxIn.GetSerializeSize(SER_NETWORK, PROTOCOL_VERSION), (fInsertedNew ? "new" : ""), (fUpdated ? "update" : ""));
 
         // Write to disk
         if (fInsertedNew || fUpdated)
@@ -4526,9 +4527,13 @@ string CWallet::MintZerocoin(CAmount nValue, CWalletTx& wtxNew, vector<CZerocoin
         return strError;
     }
 
+    CWalletDB walletdb(strWalletFile);
     string strError;
     CMutableTransaction txNew;
+    uint32_t nZPIVCount = 0;
+    walletdb.ReadZPIVCount(nZPIVCount);
     if (!CreateZerocoinMintTransaction(nValue, txNew, vMints, &reservekey, nFeeRequired, strError, coinControl)) {
+        walletdb.WriteZPIVCount(nZPIVCount);
         if (nValue + nFeeRequired > GetBalance())
             return strprintf(_("Error: This transaction requires a transaction fee of at least %s because of its amount, complexity, or use of recently received funds!"), FormatMoney(nFeeRequired).c_str());
         return strError;
@@ -4549,7 +4554,7 @@ string CWallet::MintZerocoin(CAmount nValue, CWalletTx& wtxNew, vector<CZerocoin
         return _("Error: The transaction was rejected! This might happen if some of the coins in your wallet were already spent, such as if you used a copy of wallet.dat and coins were spent in the copy but not marked as spent here.");
     } else {
         //update mints with full transaction hash and then database them
-        CWalletDB walletdb(pwalletMain->strWalletFile);
+        walletdb.WriteZPIVCount(nZPIVCount);
         for (CZerocoinMint mint : vMints) {
             mint.SetTxHash(wtxNew.GetHash());
             walletdb.WriteZerocoinMint(mint);

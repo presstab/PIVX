@@ -313,6 +313,8 @@ public:
         zwalletMain = zwallet;
     }
 
+    CzPIVWallet* getZWallet() { return zwalletMain; }
+
     bool isZeromintEnabled()
     {
         return fEnableZeromint;

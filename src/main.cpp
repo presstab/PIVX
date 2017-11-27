@@ -1325,10 +1325,11 @@ bool CheckZerocoinMint(const uint256& txHash, const CTxOut& txout, CValidationSt
     if (!fCheckOnly && !RecordMintToDB(pubCoin, txHash))
         return state.DoS(100, error("CheckZerocoinMint(): RecordMintToDB() failed"));
 
-    if (zwalletMain) {
-        if (zwalletMain->IsNextMint(pubCoin.getValue())) {
+    if (pwalletMain) {
+        CzPIVWallet* zwallet = pwalletMain->getZWallet();
+        if (zwallet->IsNextMint(pubCoin.getValue())) {
             CZerocoinMint mint(pubCoin.getDenomination(), pubCoin.getValue(), CBigNum(0), CBigNum(0), false);
-            zwalletMain->AddMint(mint, txHash);
+            zwallet->AddMint(mint, txHash);
         }
 
     }

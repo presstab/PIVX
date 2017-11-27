@@ -22,7 +22,7 @@ private:
 
 public:
     CzPIVWallet(std::string strWalletFile, bool fFirstRun);
-    bool SetMasterSeed(const uint256& seedMaster);
+    bool SetMasterSeed(const uint256& seedMaster, bool fResetCount = false);
     void SyncWithChain();
     void GenerateDeterministicZPIV(libzerocoin::CoinDenomination denom, libzerocoin::PrivateCoin& coin, bool fGenerateOnly = false);
     bool IsNextMint(const CBigNum& bnValue);
@@ -31,7 +31,7 @@ public:
 private:
     uint512 GetNextZerocoinSeed();
     void UpdateCount();
-    void SeedToZPiv(uint512 seed, CBigNum& bnSerial, CBigNum& bnRandomness);
+    void SeedToZPIV(uint512 seed, CBigNum& bnSerial, CBigNum& bnRandomness);
 };
 
 #endif //PIVX_ZPIVWALLET_H

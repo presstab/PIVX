@@ -2816,3 +2816,38 @@ UniValue reconsiderzerocoins(const UniValue& params, bool fHelp)
 
     return arrRet;
 }
+
+UniValue setzpivseed(const UniValue& params, bool fHelp)
+{
+    if(fHelp || params.size() != 1)
+        throw runtime_error(
+                "setzpivseed\n"
+                        "\nCheck archived zPiv list to see if any mints were added to the blockchain.\n"
+
+                        "\nResult\n"
+                        "[                                 (array of json objects)\n"
+                        "  {\n"
+                        "    \"txid\" : txid,              (numeric) the mint's zerocoin denomination \n"
+                        "    \"denomination\" : \"denom\", (numeric) the mint's zerocoin denomination\n"
+                        "    \"pubcoin\" : \"pubcoin\",    (string) The mint's public identifier\n"
+                        "    \"height\" : n,               (numeric) The height the tx was added to the blockchain\n"
+                        "  }\n"
+                        "  ,...\n"
+                        "]\n"
+
+                        "\nExamples\n" +
+                HelpExampleCli("reconsiderzerocoins", "") + HelpExampleRpc("reconsiderzerocoins", ""));
+
+    uint256 seed;
+    seed.SetHex(params[0].get_str());
+
+    CzPIVWallet* zwallet = pwalletMain->getZWallet();
+    bool fSuccess = zwallet->SetMasterSeed(seed);
+    if (fSuccess)
+        zwallet->SyncWithChain();
+
+    UniValue ret(UniValue::VARR);
+    ret.push_back(Pair("success", fSuccess));
+
+    return ret;
+}
