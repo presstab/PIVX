@@ -5,10 +5,11 @@
 #ifndef PIVX_ZPIVWALLET_H
 #define PIVX_ZPIVWALLET_H
 
+#include <map>
 #include "libzerocoin/Coin.h"
+#include "mintpool.h"
 #include "uint256.h"
-
-class CZerocoinMint;
+#include "primitives/zerocoin.h"
 
 class CzPIVWallet
 {
@@ -18,18 +19,20 @@ private:
     std::string strWalletFile;
     bool fFirstRun;
     const uint8_t nVersion = 1;
-    CBigNum bnNextMintValue;
+    CMintPool mintPool;
 
 public:
     CzPIVWallet(std::string strWalletFile, bool fFirstRun);
     bool SetMasterSeed(const uint256& seedMaster, bool fResetCount = false);
     void SyncWithChain();
     void GenerateDeterministicZPIV(libzerocoin::CoinDenomination denom, libzerocoin::PrivateCoin& coin, bool fGenerateOnly = false);
-    bool IsNextMint(const CBigNum& bnValue);
-    bool AddMint(CZerocoinMint mint, uint256 txHash, int nHeight = 0);
+    void GenerateMintPool();
+    bool SetMintSeen(CZerocoinMint mint);
+    bool IsInMintPool(const CBigNum& bnValue) { return mintPool.Has(bnValue); }
 
 private:
     uint512 GetNextZerocoinSeed();
+    uint512 GetZerocoinSeed(uint32_t n);
     void UpdateCount();
     void SeedToZPIV(uint512 seed, CBigNum& bnSerial, CBigNum& bnRandomness);
 };

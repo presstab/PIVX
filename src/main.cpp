@@ -1327,9 +1327,11 @@ bool CheckZerocoinMint(const uint256& txHash, const CTxOut& txout, CValidationSt
 
     if (pwalletMain) {
         CzPIVWallet* zwallet = pwalletMain->getZWallet();
-        if (zwallet->IsNextMint(pubCoin.getValue())) {
+        if (zwallet->IsInMintPool(pubCoin.getValue())) {
             CZerocoinMint mint(pubCoin.getDenomination(), pubCoin.getValue(), CBigNum(0), CBigNum(0), false);
-            zwallet->AddMint(mint, txHash);
+            mint.SetTxHash(txHash);
+            if (!zwallet->SetMintSeen(mint))
+                LogPrintf("%s: Failed to set mint %s as seen!\n", __func__, mint.GetValue().GetHex());
         }
 
     }

@@ -2842,7 +2842,7 @@ UniValue setzpivseed(const UniValue& params, bool fHelp)
     seed.SetHex(params[0].get_str());
 
     CzPIVWallet* zwallet = pwalletMain->getZWallet();
-    bool fSuccess = zwallet->SetMasterSeed(seed);
+    bool fSuccess = zwallet->SetMasterSeed(seed, true);
     if (fSuccess)
         zwallet->SyncWithChain();
 
