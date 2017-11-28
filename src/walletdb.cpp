@@ -604,8 +604,8 @@ bool ReadKeyValue(CWallet* pwallet, CDataStream& ssKey, CDataStream& ssValue, CW
             // creation time. Note that this may be overwritten by actually
             // stored metadata for that key later, which is fine.
             CKeyID keyid = keypool.vchPubKey.GetID();
-            if (pwallet->mapKeyMetadata.count(keyid) == 0)
-                pwallet->mapKeyMetadata[keyid] = CKeyMetadata(keypool.nTime);
+            if (!pwallet->mapKeyMetadata.count(keyid))
+                pwallet->mapKeyMetadata.insert(make_pair(keyid, CKeyMetadata(keypool.nTime)));
         } else if (strType == "version") {
             ssValue >> wss.nFileVersion;
             if (wss.nFileVersion == 10300)
