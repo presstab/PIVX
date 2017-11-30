@@ -6,6 +6,7 @@
 #include "main.h"
 #include "txdb.h"
 #include "walletdb.h"
+#include "init.h"
 
 using namespace libzerocoin;
 
@@ -71,11 +72,9 @@ void CzPIVWallet::GenerateMintPool()
 }
 
 //Catch the counter up with the chain
+map<CBigNum, uint32_t> mapMissingMints;
 void CzPIVWallet::SyncWithChain()
 {
-    //Create the next mint and see if the commitment value is on the chain
-    GenerateMintPool();
-
     uint32_t nLastCountUsed = 0;
     bool found = true;
     while (found) {
@@ -83,6 +82,12 @@ void CzPIVWallet::SyncWithChain()
         GenerateMintPool();
 
         for (pair<CBigNum, uint32_t> pMint : mintPool.List()) {
+            if (ShutdownRequested())
+                return;
+
+            if (mapMissingMints.count(pMint.first))
+                continue;
+
             uint256 txHash;
             if (zerocoinDB->ReadCoinMint(pMint.first, txHash)) {
                 //this mint has already occured on the chain, increment counter's state to reflect this
@@ -93,6 +98,9 @@ void CzPIVWallet::SyncWithChain()
                 CTransaction tx;
                 if (!GetTransaction(txHash, tx, hashBlock)) {
                     LogPrintf("%s : failed to get transaction for mint %s!\n", __func__, pMint.first.GetHex());
+                    found = false;
+                    nLastCountUsed = std::max(pMint.second, nLastCountUsed);
+                    mapMissingMints.insert(pMint);
                     continue;
                 }
 
@@ -119,8 +127,10 @@ void CzPIVWallet::SyncWithChain()
                 }
 
                 if (!fFoundMint || denomination == ZQ_ERROR) {
-                    LogPrintf("%s : failed to get mint %s from tx %s!\n", __func__, pMint.first.GetHex(),
-                              tx.GetHash().GetHex());
+                    LogPrintf("%s : failed to get mint %s from tx %s!\n", __func__, pMint.first.GetHex(), tx.GetHash().GetHex());
+                    found = false;
+                    nLastCountUsed = std::max(pMint.second, nLastCountUsed);
+                    mapMissingMints.insert(pMint);
                     break;
                 }
 
@@ -139,7 +149,7 @@ void CzPIVWallet::SyncWithChain()
                 mint.SetHeight(nHeight);
                 mint.SetTxHash(txHash);
                 SetMintSeen(mint);
-                nLastCountUsed = pMint.second;
+                nLastCountUsed = std::max(pMint.second, nLastCountUsed);
             }
         }
     }
@@ -170,9 +180,9 @@ bool CzPIVWallet::SetMintSeen(CZerocoinMint mint)
     }
 
     //Update the count if it is less than the mint's count
-    if (nCount < pMint.second) {
+    if (nCount <= pMint.second) {
         CWalletDB walletdb(strWalletFile);
-        nCount = pMint.second;
+        nCount = pMint.second + 1;
         walletdb.WriteZPIVCount(nCount);
     }
 
@@ -259,11 +269,6 @@ void CzPIVWallet::UpdateCount()
 void CzPIVWallet::GenerateDeterministicZPIV(CoinDenomination denom, PrivateCoin& coin, bool fGenerateOnly)
 {
     uint512 seedZerocoin = GetNextZerocoinSeed();
-
-    //TODO remove this leak of seed from logs before merge to master
-    if (!fGenerateOnly)
-        LogPrintf("%s : Generated new deterministic mint. Count=%d seed=%s\n", __func__, nCount, seedZerocoin.GetHex().substr(0, 4));
-
     CBigNum bnSerial;
     CBigNum bnRandomness;
     SeedToZPIV(seedZerocoin, bnSerial, bnRandomness);
@@ -271,6 +276,9 @@ void CzPIVWallet::GenerateDeterministicZPIV(CoinDenomination denom, PrivateCoin&
 
     if (fGenerateOnly)
         return;
+
+    //TODO remove this leak of seed from logs before merge to master
+    LogPrintf("%s : Generated new deterministic mint. Count=%d pubcoin=%s seed=%s\n", __func__, nCount, coin.getPublicCoin().getValue().GetHex().substr(0,6), seedZerocoin.GetHex().substr(0, 4));
 
     //set to the next count
     UpdateCount();

@@ -4563,8 +4563,8 @@ string CWallet::MintZerocoin(CAmount nValue, CWalletTx& wtxNew, vector<CZerocoin
     }
 
     //Create a backup of the wallet
-    if (fBackupMints)
-        ZPivBackupWallet();
+   // if (fBackupMints)
+     //   ZPivBackupWallet();
 
     return "";
 }
