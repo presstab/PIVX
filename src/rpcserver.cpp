@@ -333,6 +333,7 @@ static const CRPCCommand vRPCCommands[] =
         {"pivx", "getmasternodewinners", &getmasternodewinners, true, true, false},
         {"pivx", "getmasternodescores", &getmasternodescores, true, true, false},
         {"pivx", "mnbudget", &mnbudget, true, true, false},
+        {"pivx", "masternodebroadcast", &masternodebroadcast, true, true, false},
         {"pivx", "preparebudget", &preparebudget, true, true, false},
         {"pivx", "submitbudget", &submitbudget, true, true, false},
         {"pivx", "mnbudgetvote", &mnbudgetvote, true, true, false},

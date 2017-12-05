@@ -1173,3 +1173,20 @@ std::string CMasternodeMan::ToString() const
 
     return info.str();
 }
+
+void CMasternodeMan::UpdateMasternodeList(CMasternodeBroadcast mnb) {
+    mapSeenMasternodePing.insert(make_pair(mnb.lastPing.GetHash(), mnb.lastPing));
+    mapSeenMasternodeBroadcast.insert(make_pair(mnb.GetHash(), mnb));
+    masternodeSync.AddedMasternodeList(mnb.GetHash());
+
+    LogPrintf("CMasternodeMan::UpdateMasternodeList() - addr: %s\n    vin: %s\n", mnb.addr.ToString(), mnb.vin.ToString());
+
+    CMasternode* pmn = Find(mnb.vin);
+    if(pmn == NULL)
+    {
+        CMasternode mn(mnb);
+        Add(mn);
+    } else {
+        pmn->UpdateFromNewBroadcast(mnb);
+    }
+}
