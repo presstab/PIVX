@@ -401,8 +401,6 @@ bool CheckProofOfStake(const CBlock block, uint256& hashProofOfStake)
                      tx.GetHash().ToString().c_str(), hashProofOfStake.ToString().c_str());
     }
 
-    LogPrintf("Stake Check Passed!\n");
-
     return true;
 }
 

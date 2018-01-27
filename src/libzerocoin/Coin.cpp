@@ -15,9 +15,7 @@
 #include <iostream>
 #include "Coin.h"
 #include "Commitment.h"
-#include "Denominations.h"
-#include "../pubkey.h"
-#include "../utilstrencodings.h"
+#include "pubkey.h"
 
 namespace libzerocoin {
 
@@ -89,7 +87,6 @@ inline void GenerateKeyPair(const CBigNum& bnGroupOrder, CKey& key, CBigNum& bnS
 const CPubKey PrivateCoin::getPubKey() const
 {
 	CKey key;
-	cout << "PrivateCoin::getPubKey privkey=" << HexStr(privkey.begin(), privkey.end(), false) << endl;
 	key.SetPrivKey(privkey, true);
 	return key.GetPubKey();
 }

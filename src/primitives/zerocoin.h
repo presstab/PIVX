@@ -25,6 +25,9 @@ private:
     bool isUsed;
 
 public:
+    static const int STAKABLE_VERSION = 2;
+    static const int CURRENT_VERSION = 2;
+
     CZerocoinMint()
     {
         SetNull();
@@ -137,17 +140,15 @@ public:
             READWRITE(version);
         } catch (...) {
             fVersionedMint = false;
-
         }
 
-        if (version > 2) {
+        if (version > CURRENT_VERSION) {
             version = 0;
             fVersionedMint = false;
         }
 
-        if (fVersionedMint) {
+        if (fVersionedMint)
             READWRITE(privkey);
-        }
     };
 };
 

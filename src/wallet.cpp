@@ -18,6 +18,7 @@
 #include "script/script.h"
 #include "script/sign.h"
 #include "spork.h"
+#include "stakeinput.h"
 #include "swifttx.h"
 #include "timedata.h"
 #include "util.h"
@@ -25,7 +26,6 @@
 
 #include "denomination_functions.h"
 #include "libzerocoin/Denominations.h"
-#include "stakeinput.h"
 #include <assert.h>
 
 #include <boost/algorithm/string/replace.hpp>
@@ -1789,14 +1789,14 @@ bool CWallet::SelectStakeCoins(std::list<CStakeInput*>& listInputs, CAmount nTar
     list<CZerocoinMint> listMints = walletdb.ListMintedCoins(true, true, true);
 
     for (CZerocoinMint mint : listMints) {
-        if (mint.GetVersion() < 2)
+        if (mint.GetVersion() < CZerocoinMint::STAKABLE_VERSION)
             continue;
-        if (mint.GetHeight() < chainActive.Height() - 200) {
+        if (mint.GetHeight() < chainActive.Height() - Params().Zerocoin_RequiredStakeDepth()) {
             CZPivStake* input = new CZPivStake(mint);
             listInputs.emplace_back(input);
         }
     }
-    LogPrintf("******%s : listmints size=%d\n", __func__, listMints.size());
+
     return true;
 }
 
@@ -1828,9 +1828,9 @@ bool CWallet::MintableCoins()
     list<CZerocoinMint> listMints = walletdb.ListMintedCoins(true, true, true);
 
     for (CZerocoinMint mint : listMints) {
-        if (mint.GetVersion() < 2)
+        if (mint.GetVersion() < CZerocoinMint::STAKABLE_VERSION)
             continue;
-        if (mint.GetHeight() < chainActive.Height() - 200) {
+        if (mint.GetHeight() < chainActive.Height() - Params().Zerocoin_RequiredStakeDepth()) {
             return true;
         }
     }
@@ -2571,8 +2571,7 @@ bool CWallet::CreateCoinStake(const CKeyStore& keystore, unsigned int nBits, int
     if (nBalance <= nReserveBalance)
         return false;
 
-    // presstab HyperStake - Initialize as static and don't update the set on every run of CreateCoinStake() in order to lighten resource use
-    //static std::set<pair<const CWalletTx*, unsigned int> > setStakeCoins;
+    // Initialize as static and don't update the set on every run of CreateCoinStake() in order to lighten resource use
     static int nLastStakeSetUpdate = 0;
     static list<CStakeInput*> listInputs;
     if (GetTime() - nLastStakeSetUpdate > nStakeSetUpdateTime) {
@@ -2607,7 +2606,6 @@ bool CWallet::CreateCoinStake(const CKeyStore& keystore, unsigned int nBits, int
         //iterates each utxo inside of CheckStakeKernelHash()
         nAttempts++;
         if (Stake(stakeInput, nBits, block.GetBlockTime(), nTxNewTime, hashProofOfStake)) {
-            LogPrintf("*** 2593\n");
             //Double check that this will pass time requirements
             if (nTxNewTime <= chainActive.Tip()->GetMedianTimePast()) {
                 LogPrintf("CreateCoinStake() : kernel found, but it is too far in the past \n");
@@ -2628,7 +2626,7 @@ bool CWallet::CreateCoinStake(const CKeyStore& keystore, unsigned int nBits, int
             CAmount nReward;
             nReward = GetBlockValue(chainActive.Height() + 1);
             nCredit += nReward;
-            LogPrintf("line 2642\n");
+
             CAmount nMinFee = 0;
             while (true) {
                 // Set output amount
@@ -2658,7 +2656,6 @@ bool CWallet::CreateCoinStake(const CKeyStore& keystore, unsigned int nBits, int
 
             //Masternode payment
             FillBlockPayee(txNew, nMinFee, true);
-            LogPrintf("line 2672\n");
 
             uint256 hashTxOut = txNew.GetHash();
             CTxIn in;
@@ -2691,7 +2688,7 @@ bool CWallet::CreateCoinStake(const CKeyStore& keystore, unsigned int nBits, int
                 return error("CreateCoinStake : failed to sign coinstake");
         }
     }
-    LogPrintf("line 2680\n");
+
     // Successfully generated coinstake
     nLastStakeSetUpdate = 0; //this will trigger stake set to repopulate next round
     return true;

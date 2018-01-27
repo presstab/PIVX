@@ -14,7 +14,6 @@
 #ifndef COINSPEND_H_
 #define COINSPEND_H_
 
-#include <iostream>
 #include "Accumulator.h"
 #include "AccumulatorProofOfKnowledge.h"
 #include "Coin.h"
@@ -22,8 +21,8 @@
 #include "Params.h"
 #include "SerialNumberSignatureOfKnowledge.h"
 #include "bignum.h"
+#include "pubkey.h"
 #include "serialize.h"
-#include "../pubkey.h"
 
 namespace libzerocoin
 {

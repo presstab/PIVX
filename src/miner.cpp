@@ -21,10 +21,11 @@
 #ifdef ENABLE_WALLET
 #include "wallet.h"
 #endif
-#include "masternode-payments.h"
 #include "accumulators.h"
-#include "spork.h"
 #include "blocksignature.h"
+#include "masternode-payments.h"
+#include "spork.h"
+
 
 #include <boost/thread.hpp>
 #include <boost/tuple/tuple.hpp>
@@ -455,7 +456,7 @@ void IncrementExtraNonce(CBlock* pblock, CBlockIndex* pindexPrev, unsigned int& 
     pblock->hashMerkleRoot = pblock->BuildMerkleTree();
 }
 
-
+#ifdef ENABLE_WALLET
 //////////////////////////////////////////////////////////////////////////////
 //
 // Internal miner
@@ -537,7 +538,7 @@ void BitcoinMiner(CWallet* pwallet, bool fProofOfStake)
                 continue;
             }
 
-            while (IsInitialBlockDownload() || pwallet->IsLocked() || !fMintableCoins || nReserveBalance >= pwallet->GetBalance()){ //|| !masternodeSync.IsSynced()) {
+            while (IsInitialBlockDownload() || pwallet->IsLocked() || !fMintableCoins || nReserveBalance >= pwallet->GetBalance() || !masternodeSync.IsSynced()) {
                 nLastCoinStakeSearchInterval = 0;
                 MilliSleep(5000);
                 if (!fGenerateBitcoins && !fProofOfStake)
@@ -587,7 +588,6 @@ void BitcoinMiner(CWallet* pwallet, bool fProofOfStake)
                     LogPrintf("BitcoinMiner(): Signing new block with zPIV key failed \n");
                     continue;
                 }
-                LogPrintf("%s: signed block with zpiv key!", __func__);
             } else if (!SignBlock(*pblock, *pwallet)) {
                 LogPrintf("BitcoinMiner(): Signing new block with UTXO key failed \n");
                 continue;
@@ -725,3 +725,4 @@ void GenerateBitcoins(bool fGenerate, CWallet* pwallet, int nThreads)
         minerThreads->create_thread(boost::bind(&ThreadBitcoinMiner, pwallet));
 }
 
+#endif // ENABLE_WALLET

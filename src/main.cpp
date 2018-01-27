@@ -10,6 +10,7 @@
 #include "accumulators.h"
 #include "addrman.h"
 #include "alert.h"
+#include "blocksignature.h"
 #include "chainparams.h"
 #include "checkpoints.h"
 #include "checkqueue.h"
@@ -33,7 +34,6 @@
 
 #include "primitives/zerocoin.h"
 #include "libzerocoin/Denominations.h"
-#include "blocksignature.h"
 
 #include <sstream>
 
@@ -1255,7 +1255,9 @@ bool BlockToZerocoinMintList(const CBlock& block, std::list<CZerocoinMint>& vMin
             if(!TxOutToPublicCoin(txOut, pubCoin, state))
                 return false;
 
-            CZerocoinMint mint = CZerocoinMint(pubCoin.getDenomination(), pubCoin.getValue(), 0, 0, false, 1, nullptr);
+            //version should not actually matter here since it is just a reference to the pubcoin, not to the privcoin
+            uint8_t version = 1;
+            CZerocoinMint mint = CZerocoinMint(pubCoin.getDenomination(), pubCoin.getValue(), 0, 0, false, version, nullptr);
             mint.SetTxHash(tx.GetHash());
             vMints.push_back(mint);
         }
@@ -4913,7 +4915,7 @@ bool ProcessNewBlock(CValidationState& state, CNode* pfrom, CBlock* pblock, CDis
 
     if (!CheckBlockSignature(*pblock))
         return error("ProcessNewBlock() : bad proof-of-stake block signature");
-    LogPrintf("%s 4916\n", __func__);
+
     if (pblock->GetHash() != Params().HashGenesisBlock() && pfrom != NULL) {
         //if we get this far, check if the prev block is our prev block, if not then request sync and return false
         BlockMap::iterator mi = mapBlockIndex.find(pblock->hashPrevBlock);

@@ -3,15 +3,12 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include "primitives/zerocoin.h"
-#include "../key.h"
-#include "../util.h"
-#include "../tinyformat.h"
-#include "zerocoin.h"
-#include "../utilstrencodings.h"
+#include "util.h"
+#include "utilstrencodings.h"
 
 bool CZerocoinMint::GetKeyPair(CKey &key) const
 {
-    if (version < 2)
+    if (version < STAKABLE_VERSION)
         return error("%s: version is %d", __func__, version);
 
     if (privkey.empty())
