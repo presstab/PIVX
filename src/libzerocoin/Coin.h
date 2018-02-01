@@ -89,6 +89,8 @@ private:
 class PrivateCoin
 {
 public:
+    static int const PUBKEY_VERSION = 2;
+    static int const CURRENT_VERSION = 2;
     template <typename Stream>
     PrivateCoin(const ZerocoinParams* p, Stream& strm) : params(p), publicCoin(p)
     {

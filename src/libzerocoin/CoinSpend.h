@@ -34,9 +34,9 @@ class CoinSpend
 {
 public:
     template <typename Stream>
-    CoinSpend(const ZerocoinParams* p, uint8_t nVersion, Stream& strm) : accumulatorPoK(&p->accumulatorParams),
+    CoinSpend(const ZerocoinParams* p, Stream& strm) : accumulatorPoK(&p->accumulatorParams),
                                                        serialNumberSoK(p),
-                                                       commitmentPoK(&p->serialNumberSoKCommitmentGroup, &p->accumulatorParams.accumulatorPoKCommitmentGroup), version(nVersion)
+                                                       commitmentPoK(&p->serialNumberSoKCommitmentGroup, &p->accumulatorParams.accumulatorPoKCommitmentGroup)
     {
         strm >> *this;
     }
@@ -63,8 +63,8 @@ public:
 	 * @param a hash of the partial transaction that contains this coin spend
 	 * @throw ZerocoinException if the process fails
 	 */
-    CoinSpend(const ZerocoinParams* p, const PrivateCoin& coin, Accumulator& a, const uint32_t checksum,
-              const AccumulatorWitness& witness, const uint256& ptxHash, const uint8_t nVersion);
+    CoinSpend(const ZerocoinParams* p, const PrivateCoin& coin, Accumulator& a, const uint32_t& checksum,
+              const AccumulatorWitness& witness, const uint256& ptxHash);
 
     /** Returns the serial number of the coin spend by this proof.
 	 *
@@ -112,9 +112,13 @@ public:
         READWRITE(accumulatorPoK);
         READWRITE(serialNumberSoK);
         READWRITE(commitmentPoK);
-        if (version >= 2) {
+
+        try {
+            READWRITE(version);
             READWRITE(pubkey);
             READWRITE(vchSig);
+        } catch (...) {
+            version = 0;
         }
     }
 

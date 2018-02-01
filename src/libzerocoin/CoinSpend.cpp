@@ -15,15 +15,14 @@
 namespace libzerocoin
 {
 
-CoinSpend::CoinSpend(const ZerocoinParams* p, const PrivateCoin& coin, Accumulator& a, const uint32_t checksum,
-                     const AccumulatorWitness& witness, const uint256& ptxHash, uint8_t nVersion) : accChecksum(checksum),
+CoinSpend::CoinSpend(const ZerocoinParams* p, const PrivateCoin& coin, Accumulator& a, const uint32_t& checksum,
+                     const AccumulatorWitness& witness, const uint256& ptxHash) : accChecksum(checksum),
                                                                                   ptxHash(ptxHash),
                                                                                   coinSerialNumber((coin.getSerialNumber())),
                                                                                   accumulatorPoK(&p->accumulatorParams),
                                                                                   serialNumberSoK(p),
                                                                                   commitmentPoK(&p->serialNumberSoKCommitmentGroup,
-                                                                                                &p->accumulatorParams.accumulatorPoKCommitmentGroup),
-                                                                                  version(nVersion)
+                                                                                                &p->accumulatorParams.accumulatorPoKCommitmentGroup)
 {
     denomination = coin.getPublicCoin().getDenomination();
     // Sanity check: let's verify that the Witness is valid with respect to
@@ -69,7 +68,20 @@ CoinSpend::CoinSpend(const ZerocoinParams* p, const PrivateCoin& coin, Accumulat
 bool CoinSpend::Verify(const Accumulator& a) const
 {
     // Verify both of the sub-proofs using the given meta-data
-    return (a.getDenomination() == this->denomination) && commitmentPoK.Verify(serialCommitmentToCoinValue, accCommitmentToCoinValue) && accumulatorPoK.Verify(a, accCommitmentToCoinValue) && serialNumberSoK.Verify(coinSerialNumber, serialCommitmentToCoinValue, signatureHash());
+    bool fVerifyV1 = (a.getDenomination() == this->denomination) &&
+            commitmentPoK.Verify(serialCommitmentToCoinValue, accCommitmentToCoinValue) &&
+            accumulatorPoK.Verify(a, accCommitmentToCoinValue) &&
+            serialNumberSoK.Verify(coinSerialNumber, serialCommitmentToCoinValue, signatureHash());
+
+    if (!fVerifyV1 || version < PrivateCoin::PUBKEY_VERSION)
+        return fVerifyV1;
+
+    //Additional verification layer that requires the spend be signed by the private key associated with the serial
+    uint256 hashedPubkey = Hash(pubkey.begin(), pubkey.end());
+    if (CBigNum(hashedPubkey) != coinSerialNumber)
+        return false;
+
+    return pubkey.Verify(signatureHash(), vchSig);
 }
 
 const uint256 CoinSpend::signatureHash() const

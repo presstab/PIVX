@@ -4116,7 +4116,7 @@ bool CWallet::MintToTxIn(CZerocoinMint zerocoinSelected, int nSecurityLevel, con
     uint32_t nChecksum = GetChecksum(accumulator.getValue());
 
     try {
-        libzerocoin::CoinSpend spend(Params().Zerocoin_Params(), privateCoin, accumulator, nChecksum, witness, hashTxOut, privateCoin.getVersion());
+        libzerocoin::CoinSpend spend(Params().Zerocoin_Params(), privateCoin, accumulator, nChecksum, witness, hashTxOut);
 
         if (!spend.Verify(accumulator)) {
             receipt.SetStatus(_("The new spend coin transaction did not verify"), ZPIV_INVALID_WITNESS);
@@ -4133,11 +4133,6 @@ bool CWallet::MintToTxIn(CZerocoinMint zerocoinSelected, int nSecurityLevel, con
         newTxIn.scriptSig.insert(newTxIn.scriptSig.end(), data.begin(), data.end());
         newTxIn.prevout.SetNull();
 
-        //Give the version within the prevout.n in the input (which is null in v1 spends). This allows new versions to
-        //parse a version and handle deserialization properly
-        if (spend.getVersion() >= 2)
-            newTxIn.prevout.n = spend.getVersion();
-
         //use nSequence as a shorthand lookup of denomination
         //NOTE that this should never be used in place of checking the value in the final blockchain acceptance/verification
         //of the transaction
@@ -4146,13 +4141,12 @@ bool CWallet::MintToTxIn(CZerocoinMint zerocoinSelected, int nSecurityLevel, con
         CDataStream serializedCoinSpendChecking(SER_NETWORK, PROTOCOL_VERSION);
         try {
             serializedCoinSpendChecking << spend;
-        }
-        catch (...) {
+        } catch (...) {
             receipt.SetStatus(_("Failed to deserialize"), ZPIV_BAD_SERIALIZATION);
             return false;
         }
 
-        libzerocoin::CoinSpend newSpendChecking(Params().Zerocoin_Params(), spend.getVersion(), serializedCoinSpendChecking);
+        libzerocoin::CoinSpend newSpendChecking(Params().Zerocoin_Params(), serializedCoinSpendChecking);
         if (!newSpendChecking.Verify(accumulator)) {
             receipt.SetStatus(_("The transaction did not verify"), ZPIV_BAD_SERIALIZATION);
             return false;

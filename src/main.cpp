@@ -1338,14 +1338,7 @@ CoinSpend TxInToZerocoinSpend(const CTxIn& txin)
     dataTxIn.insert(dataTxIn.end(), txin.scriptSig.begin() + BIGNUM_SIZE, txin.scriptSig.end());
 
     CDataStream serializedCoinSpend(dataTxIn, SER_NETWORK, PROTOCOL_VERSION);
-
-    // Use prevout.n to encode a version number. This provides a simple way to add a version when this was previously
-    // not included in zerocoin spends.
-    uint8_t nVersion = 1;
-    if (!txin.prevout.IsNull())
-        nVersion = static_cast<uint8_t>(txin.prevout.n);
-
-    return CoinSpend(Params().Zerocoin_Params(), nVersion, serializedCoinSpend);
+    return CoinSpend(Params().Zerocoin_Params(), serializedCoinSpend);
 }
 
 bool IsZerocoinSpendUnknown(CoinSpend coinSpend, uint256 hashTx, CValidationState& state)
