@@ -97,6 +97,7 @@ public:
 
     bool Verify(const Accumulator& a) const;
     bool HasValidSerial(ZerocoinParams* params) const;
+    bool HasValidSignature() const;
     CBigNum CalculateValidSerial(ZerocoinParams* params);
 
     ADD_SERIALIZE_METHODS;

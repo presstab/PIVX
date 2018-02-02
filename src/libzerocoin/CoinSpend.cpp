@@ -68,20 +68,10 @@ CoinSpend::CoinSpend(const ZerocoinParams* p, const PrivateCoin& coin, Accumulat
 bool CoinSpend::Verify(const Accumulator& a) const
 {
     // Verify both of the sub-proofs using the given meta-data
-    bool fVerifyV1 = (a.getDenomination() == this->denomination) &&
+    return (a.getDenomination() == this->denomination) &&
             commitmentPoK.Verify(serialCommitmentToCoinValue, accCommitmentToCoinValue) &&
             accumulatorPoK.Verify(a, accCommitmentToCoinValue) &&
             serialNumberSoK.Verify(coinSerialNumber, serialCommitmentToCoinValue, signatureHash());
-
-    if (!fVerifyV1 || version < PrivateCoin::PUBKEY_VERSION)
-        return fVerifyV1;
-
-    //Additional verification layer that requires the spend be signed by the private key associated with the serial
-    uint256 hashedPubkey = Hash(pubkey.begin(), pubkey.end());
-    if (CBigNum(hashedPubkey) != coinSerialNumber)
-        return false;
-
-    return pubkey.Verify(signatureHash(), vchSig);
 }
 
 const uint256 CoinSpend::signatureHash() const
@@ -95,6 +85,19 @@ const uint256 CoinSpend::signatureHash() const
 bool CoinSpend::HasValidSerial(ZerocoinParams* params) const
 {
     return coinSerialNumber > 0 && coinSerialNumber < params->coinCommitmentGroup.groupOrder;
+}
+
+//Additional verification layer that requires the spend be signed by the private key associated with the serial
+bool CoinSpend::HasValidSignature() const
+{
+    if (version < PrivateCoin::PUBKEY_VERSION)
+        return true;
+
+    uint256 hashedPubkey = Hash(pubkey.begin(), pubkey.end());
+    if (CBigNum(hashedPubkey) != coinSerialNumber)
+        return false;
+
+    return pubkey.Verify(signatureHash(), vchSig);
 }
 
 CBigNum CoinSpend::CalculateValidSerial(ZerocoinParams* params)
