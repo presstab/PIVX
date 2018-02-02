@@ -22,6 +22,7 @@ public:
     virtual CAmount GetValue() = 0;
     virtual bool CreateTxOut(CWallet* pwallet, CTxOut& out) = 0;
     virtual bool GetModifier(uint64_t& nStakeModifier) = 0;
+    virtual bool IsZPIV() = 0;
     virtual CDataStream GetUniqueness() = 0;
 };
 
@@ -65,6 +66,7 @@ public:
     CDataStream GetUniqueness() override;
     bool CreateTxIn(CWallet* pwallet, CTxIn& txIn, uint256 hashTxOut = 0) override;
     bool CreateTxOut(CWallet* pwallet, CTxOut& out) override;
+    bool IsZPIV() { return true; }
 };
 
 class CPivStake : public CStakeInput
@@ -87,6 +89,7 @@ public:
     CDataStream GetUniqueness() override;
     bool CreateTxIn(CWallet* pwallet, CTxIn& txIn, uint256 hashTxOut = 0) override;
     bool CreateTxOut(CWallet* pwallet, CTxOut& out) override;
+    bool IsZPIV() { return false; }
 };
 
 

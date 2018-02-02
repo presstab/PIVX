@@ -2655,7 +2655,7 @@ bool CWallet::CreateCoinStake(const CKeyStore& keystore, unsigned int nBits, int
             }
 
             //Masternode payment
-            FillBlockPayee(txNew, nMinFee, true);
+            FillBlockPayee(txNew, nMinFee, true, stakeInput->IsZPIV());
 
             uint256 hashTxOut = txNew.GetHash();
             CTxIn in;
