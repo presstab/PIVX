@@ -382,6 +382,15 @@ bool CheckProofOfStake(const CBlock block, uint256& hashProofOfStake)
     if (!pindex)
         return error("%s: Failed to find the block index", __func__);
 
+    // Check for required zPIV depth
+    if (stakeInput->IsZPIV()) {
+        if (!pindex->nHeight)
+            return error("%s: zPIV stake block is 0", __func__);
+
+        if (chainActive.Height() - pindex->nHeight < Params().Zerocoin_RequiredStakeDepth())
+            return error("%s: zPIV stake does not have required confirmation depth", __func__);
+    }
+
     // Read block header
     CBlock blockprev;
     if (!ReadBlockFromDisk(blockprev, pindex->GetBlockPos()))
