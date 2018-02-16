@@ -2083,7 +2083,7 @@ bool CWallet::SelectStakeCoins(std::list<CStakeInput*>& listInputs, CAmount nTar
 //    }
 
     //Add zPIV
-    if (chainActive.Height() > Params().Zerocoin_Block_V2_Start()) {
+    if (chainActive.Height() > Params().Zerocoin_Block_V2_Start() && !IsSporkActive(SPORK_16_ZEROCOIN_MAINTENANCE_MODE)) {
         CWalletDB walletdb(strWalletFile);
         list<CZerocoinMint> listMints = walletdb.ListMintedCoins(true, true, true);
 
