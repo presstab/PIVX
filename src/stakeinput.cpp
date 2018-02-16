@@ -12,7 +12,7 @@
 int CZPivStake::GetChecksumHeightFromMint()
 {
     int nHeightChecksum = chainActive.Height() - Params().Zerocoin_RequiredStakeDepth();
-    nHeightChecksum -= (nHeightChecksum % 10);
+    //nHeightChecksum -= (nHeightChecksum % 10);
 
     //Need to return the first occurance of this checksum in order for the validation process to identify a specific
     //block height
@@ -23,16 +23,12 @@ int CZPivStake::GetChecksumHeightFromMint()
 
 int CZPivStake::GetChecksumHeightFromSpend()
 {
-    uint32_t nChecksum = spend->getAccumulatorChecksum();
-    return GetChecksumHeight(nChecksum, spend->getDenomination());
+    return GetChecksumHeight(nChecksum, denom);
 }
 
 uint32_t CZPivStake::GetChecksum()
 {
-    if (spend)
-        return spend->getAccumulatorChecksum();
-
-    return 0;
+    return nChecksum;
 }
 
 // The zPIV block index is the first appearance of the accumulator checksum that was used in the spend

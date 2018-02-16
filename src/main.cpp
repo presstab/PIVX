@@ -4693,19 +4693,22 @@ bool AcceptBlockHeader(const CBlock& block, CValidationState& state, CBlockIndex
 
 bool ContextualCheckZerocoinStake(CStakeInput* stake)
 {
-    CZPivStake* zPIV = (CZPivStake*)stake;
-    CBlockIndex* pindex = zPIV->GetIndexFrom();
-    if (!pindex || pindex->nHeight < Params().Zerocoin_Block_V2_Start())
-        return error("%s: zPIV stake block is less than allowed start height", __func__);
+    if (CZPivStake* zPIV = dynamic_cast<CZPivStake*>(stake)) {
+        CBlockIndex* pindex = zPIV->GetIndexFrom();
+        if (!pindex || pindex->nHeight < Params().Zerocoin_Block_V2_Start())
+            return error("%s: zPIV stake block is less than allowed start height", __func__);
 
-    if (chainActive.Height() - pindex->nHeight < Params().Zerocoin_RequiredStakeDepth())
-        return error("%s: zPIV stake does not have required confirmation depth", __func__);
+        if (chainActive.Height() - pindex->nHeight < Params().Zerocoin_RequiredStakeDepth())
+            return error("%s: zPIV stake does not have required confirmation depth", __func__);
 
-    //The checksum needs to be the exact checksum from 200 blocks ago
-    uint256 nCheckpoint200 = chainActive[chainActive.Height() - Params().Zerocoin_RequiredStakeDepth()]->nAccumulatorCheckpoint;
-    uint32_t nChecksum200 = ParseChecksum(nCheckpoint200, libzerocoin::AmountToZerocoinDenomination(zPIV->GetValue()));
-    if (nChecksum200 != zPIV->GetChecksum())
-        return error("%s: accumulator checksum is different than the block 200 blocks previous");
+        //The checksum needs to be the exact checksum from 200 blocks ago
+        uint256 nCheckpoint200 = chainActive[chainActive.Height() - Params().Zerocoin_RequiredStakeDepth()]->nAccumulatorCheckpoint;
+        uint32_t nChecksum200 = ParseChecksum(nCheckpoint200, libzerocoin::AmountToZerocoinDenomination(zPIV->GetValue()));
+        if (nChecksum200 != zPIV->GetChecksum())
+            return error("%s: accumulator checksum is different than the block 200 blocks previous. stake=%d block200=%d", __func__, zPIV->GetChecksum(), nChecksum200);
+    } else {
+        return error("%s: dynamic_cast of stake ptr failed", __func__);
+    }
 
     return true;
 }
@@ -4749,8 +4752,11 @@ bool AcceptBlock(CBlock& block, CValidationState& state, CBlockIndex** ppindex, 
         if (!CheckProofOfStake(block, hashProofOfStake, stake))
             return state.DoS(100, error("%s: proof of stake check failed", __func__));
 
+        if (!stake)
+            return error("%s: null stake ptr", __func__);
+
         if (stake->IsZPIV() && !ContextualCheckZerocoinStake(stake))
-            return state.DoS(100, error("%s: staked zPIV fails context checks"));
+            return state.DoS(100, error("%s: staked zPIV fails context checks", __func__));
 
         uint256 hash = block.GetHash();
         if(!mapProofOfStake.count(hash)) // add to mapProofOfStake

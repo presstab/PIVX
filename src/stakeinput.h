@@ -33,7 +33,7 @@ public:
 class CZPivStake : public CStakeInput
 {
 private:
-    libzerocoin::CoinSpend* spend;
+    uint32_t nChecksum;
     CZerocoinMint mint;
     bool fMint;
     libzerocoin::CoinDenomination denom;
@@ -52,7 +52,7 @@ public:
 
     explicit CZPivStake(libzerocoin::CoinSpend spend)
     {
-        this->spend = &spend;
+        this->nChecksum = spend.getAccumulatorChecksum();
         this->denom = spend.getDenomination();
         this->bnSerial = spend.getCoinSerialNumber();
         this->pindexFrom = nullptr;

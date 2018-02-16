@@ -347,7 +347,7 @@ bool Stake(CStakeInput* stakeInput, unsigned int nBits, unsigned int nTimeBlockF
 }
 
 // Check kernel hash target and coinstake signature
-bool CheckProofOfStake(const CBlock block, uint256& hashProofOfStake, CStakeInput* stake)
+bool CheckProofOfStake(const CBlock block, uint256& hashProofOfStake, CStakeInput*& stake)
 {
     const CTransaction tx = block.vtx[1];
     if (!tx.IsCoinStake())
