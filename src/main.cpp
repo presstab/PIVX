@@ -4534,18 +4534,6 @@ bool CheckWork(const CBlock block, CBlockIndex* const pindexPrev)
     if (block.nBits != nBitsRequired)
         return error("%s : incorrect proof of work at %d", __func__, pindexPrev->nHeight + 1);
 
-    if (block.IsProofOfStake()) {
-        uint256 hashProofOfStake;
-        uint256 hash = block.GetHash();
-
-        if(!CheckProofOfStake(block, hashProofOfStake)) {
-            LogPrintf("WARNING: ProcessBlock(): check proof-of-stake failed for block %s\n", hash.ToString().c_str());
-            return false;
-        }
-        if(!mapProofOfStake.count(hash)) // add to mapProofOfStake
-            mapProofOfStake.insert(make_pair(hash, hashProofOfStake));
-    }
-
     return true;
 }
 
@@ -4703,6 +4691,25 @@ bool AcceptBlockHeader(const CBlock& block, CValidationState& state, CBlockIndex
     return true;
 }
 
+bool ContextualCheckZerocoinStake(CStakeInput* stake)
+{
+    CZPivStake* zPIV = (CZPivStake*)stake;
+    CBlockIndex* pindex = zPIV->GetIndexFrom();
+    if (!pindex || pindex->nHeight < Params().Zerocoin_Block_V2_Start())
+        return error("%s: zPIV stake block is less than allowed start height", __func__);
+
+    if (chainActive.Height() - pindex->nHeight < Params().Zerocoin_RequiredStakeDepth())
+        return error("%s: zPIV stake does not have required confirmation depth", __func__);
+
+    //The checksum needs to be the exact checksum from 200 blocks ago
+    uint256 nCheckpoint200 = chainActive[chainActive.Height() - Params().Zerocoin_RequiredStakeDepth()]->nAccumulatorCheckpoint;
+    uint32_t nChecksum200 = ParseChecksum(nCheckpoint200, libzerocoin::AmountToZerocoinDenomination(zPIV->GetValue()));
+    if (nChecksum200 != zPIV->GetChecksum())
+        return error("%s: accumulator checksum is different than the block 200 blocks previous");
+
+    return true;
+}
+
 bool AcceptBlock(CBlock& block, CValidationState& state, CBlockIndex** ppindex, CDiskBlockPos* dbp, bool fAlreadyCheckedBlock)
 {
     AssertLockHeld(cs_main);
@@ -4734,6 +4741,21 @@ bool AcceptBlock(CBlock& block, CValidationState& state, CBlockIndex** ppindex, 
 
     if (block.GetHash() != Params().HashGenesisBlock() && !CheckWork(block, pindexPrev))
         return false;
+
+    if (block.IsProofOfStake()) {
+        uint256 hashProofOfStake = 0;
+        CStakeInput* stake = nullptr;
+
+        if (!CheckProofOfStake(block, hashProofOfStake, stake))
+            return state.DoS(100, error("%s: proof of stake check failed", __func__));
+
+        if (stake->IsZPIV() && !ContextualCheckZerocoinStake(stake))
+            return state.DoS(100, error("%s: staked zPIV fails context checks"));
+
+        uint256 hash = block.GetHash();
+        if(!mapProofOfStake.count(hash)) // add to mapProofOfStake
+            mapProofOfStake.insert(make_pair(hash, hashProofOfStake));
+    }
 
     if (!AcceptBlockHeader(block, state, &pindex))
         return false;
