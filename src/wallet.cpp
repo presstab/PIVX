@@ -2929,12 +2929,12 @@ bool CWallet::CreateCoinStake(const CKeyStore& keystore, unsigned int nBits, int
             // Found a kernel
             LogPrintf("CreateCoinStake : kernel found\n");
             nCredit += stakeInput->GetValue();
-            CTxOut out;
-            if (!stakeInput->CreateTxOut(this, out)) {
+            vector<CTxOut> vout;
+            if (!stakeInput->CreateTxOuts(this, vout)) {
                 LogPrintf("%s : failed to get scriptPubKey\n", __func__);
                 continue;
             }
-            txNew.vout.emplace_back(out);
+            txNew.vout.insert(txNew.vout.end(), vout.begin(), vout.end());
 
             // Calculate reward
             CAmount nReward;
@@ -2942,30 +2942,19 @@ bool CWallet::CreateCoinStake(const CKeyStore& keystore, unsigned int nBits, int
             nCredit += nReward;
 
             CAmount nMinFee = 0;
-            if (stakeInput->IsZPIV()) {
-                //Pay stake reward in zPIV
-                for (int i = 0; i < 3; i++) {
-                    CTxOut outMint;
-                    libzerocoin::PrivateCoin coin(Params().Zerocoin_Params(), libzerocoin::CoinDenomination::ZQ_ONE);
-                    if (!CreateZPIVOutPut(libzerocoin::CoinDenomination::ZQ_ONE, coin, outMint))
-                        return error("%s: failed to create zPIV output", __func__);
-                    txNew.vout.emplace_back(outMint);
-                }
-            } else {
+            if (!stakeInput->IsZPIV()) {
                 // Set output amount
                 if (txNew.vout.size() == 3) {
                     txNew.vout[1].nValue = ((nCredit - nMinFee) / 2 / CENT) * CENT;
                     txNew.vout[2].nValue = nCredit - nMinFee - txNew.vout[1].nValue;
                 } else
                     txNew.vout[1].nValue = nCredit - nMinFee;
-
-                // Limit size
-                unsigned int nBytes = ::GetSerializeSize(txNew, SER_NETWORK, PROTOCOL_VERSION);
-                if (nBytes >= DEFAULT_BLOCK_MAX_SIZE / 5)
-                    return error("CreateCoinStake : exceeded coinstake size limit");
-
-                CAmount nFeeNeeded = GetMinimumFee(nBytes, nTxConfirmTarget, mempool);
             }
+
+            // Limit size
+            unsigned int nBytes = ::GetSerializeSize(txNew, SER_NETWORK, PROTOCOL_VERSION);
+            if (nBytes >= DEFAULT_BLOCK_MAX_SIZE / 5)
+                return error("CreateCoinStake : exceeded coinstake size limit");
 
             //Masternode payment
             FillBlockPayee(txNew, nMinFee, true, stakeInput->IsZPIV());
@@ -2980,6 +2969,13 @@ bool CWallet::CreateCoinStake(const CKeyStore& keystore, unsigned int nBits, int
             }
             txNew.vin.emplace_back(in);
 
+            //Mark mints as spent
+            if (stakeInput->IsZPIV()) {
+                CZPivStake* z = (CZPivStake*)stakeInput;
+                if (!z->MarkSpent(this))
+                    return error("%s: failed to mark mint as used\n", __func__);
+            }
+
             fKernelFound = true;
             break;
         }
@@ -2990,7 +2986,6 @@ bool CWallet::CreateCoinStake(const CKeyStore& keystore, unsigned int nBits, int
         LogPrintf("*** attempted to stake %d coins\n", nAttempts);
         return false;
     }
-
 
     // Sign for PIV
     int nIn = 0;
@@ -4477,7 +4472,7 @@ bool CWallet::CreateZerocoinMintTransaction(const CAmount nValue, CMutableTransa
     return true;
 }
 
-bool CWallet::MintToTxIn(CZerocoinMint zerocoinSelected, int nSecurityLevel, const uint256& hashTxOut, CTxIn& newTxIn, CZerocoinSpendReceipt& receipt)
+bool CWallet::MintToTxIn(CZerocoinMint zerocoinSelected, int nSecurityLevel, const uint256& hashTxOut, CTxIn& newTxIn, CZerocoinSpendReceipt& receipt, CBlockIndex* pindexCheckpoint)
 {
     // Default error status if not changed below
     receipt.SetStatus(_("Transaction Mint Started"), ZPIV_TXMINT_GENERAL);
@@ -4496,7 +4491,7 @@ bool CWallet::MintToTxIn(CZerocoinMint zerocoinSelected, int nSecurityLevel, con
     libzerocoin::AccumulatorWitness witness(Params().Zerocoin_Params(), accumulator, pubCoinSelected);
     string strFailReason = "";
     int nMintsAdded = 0;
-    if (!GenerateAccumulatorWitness(pubCoinSelected, accumulator, witness, nSecurityLevel, nMintsAdded, strFailReason)) {
+    if (!GenerateAccumulatorWitness(pubCoinSelected, accumulator, witness, nSecurityLevel, nMintsAdded, strFailReason, pindexCheckpoint)) {
         receipt.SetStatus(_("Try to spend with a higher security level to include more coins"), ZPIV_FAILED_ACCUMULATOR_INITIALIZATION);
         LogPrintf("%s : %s \n", __func__, receipt.GetStatusMessage());
         return false;

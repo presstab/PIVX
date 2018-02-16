@@ -9,6 +9,24 @@
 #include "stakeinput.h"
 #include "wallet.h"
 
+int CZPivStake::GetChecksumHeightFromMint()
+{
+    int nHeightChecksum = chainActive.Height() - 120;
+    nHeightChecksum -= (nHeightChecksum % 10);
+
+    //Need to return the first occurance of this checksum in order for the validation process to identify a specific
+    //block height
+    uint32_t nChecksum = 0;
+    nChecksum = ParseChecksum(chainActive[nHeightChecksum]->nAccumulatorCheckpoint, mint.GetDenomination());
+    return GetChecksumHeight(nChecksum, mint.GetDenomination());
+}
+
+int CZPivStake::GetChecksumHeightFromSpend()
+{
+    uint32_t nChecksum = spend->getAccumulatorChecksum();
+    return GetChecksumHeight(nChecksum, spend->getDenomination());
+}
+
 // The zPIV block index is the first appearance of the accumulator checksum that was used in the spend
 // note that this also means when staking that this checksum should be from a block that is beyond 60 minutes old and
 // 100 blocks deep.
@@ -17,16 +35,13 @@ CBlockIndex* CZPivStake::GetIndexFrom()
     if (pindexFrom)
         return pindexFrom;
 
+    int nHeightChecksum = 0;
 
-    if (fMint) {
-        int nHeightChecksum = chainActive.Height() - 120;
-        nHeightChecksum -= (nHeightChecksum % 10);
-        pindexFrom = chainActive[nHeightChecksum];
-        return pindexFrom;
-    }
+    if (fMint)
+        nHeightChecksum = GetChecksumHeightFromMint();
+    else
+        nHeightChecksum = GetChecksumHeightFromSpend();
 
-    uint32_t nChecksum = spend->getAccumulatorChecksum();
-    int nHeightChecksum = GetChecksumHeight(nChecksum, spend->getDenomination());
     if (nHeightChecksum < Params().Zerocoin_StartHeight()) {
         pindexFrom = nullptr;
     } else {
@@ -76,20 +91,32 @@ bool CZPivStake::CreateTxIn(CWallet* pwallet, CTxIn& txIn, uint256 hashTxOut)
 {
     LogPrintf("%s\n", __func__);
     CZerocoinSpendReceipt receipt;
-    int nSecurityLevel = 5;
+    int nSecurityLevel = 100;
     if (!pwallet->MintToTxIn(mint, nSecurityLevel, hashTxOut, txIn, receipt))
         return error("%s\n", receipt.GetStatusMessage());
 
     return true;
 }
 
-bool CZPivStake::CreateTxOut(CWallet* pwallet, CTxOut& out)
+bool CZPivStake::CreateTxOuts(CWallet* pwallet, vector<CTxOut>& vout)
 {
     LogPrintf("%s\n", __func__);
     //todo: add mints here
-    CPubKey pubkey = pwallet->GenerateNewKey();
-    CScript scriptPubKey = GetScriptForDestination(pubkey.GetID());
-    out = CTxOut(0, scriptPubKey);
+    //Create an output returning the zPIV that was staked
+    CTxOut outReward;
+    libzerocoin::CoinDenomination denomStaked = libzerocoin::AmountToZerocoinDenomination(this->GetValue());
+    libzerocoin::PrivateCoin coin(Params().Zerocoin_Params(), denomStaked);
+    if (!pwallet->CreateZPIVOutPut(denomStaked, coin, outReward))
+        return error("%s: failed to create zPIV output", __func__);
+    vout.emplace_back(outReward);
+
+    for (unsigned int i = 0; i < 3; i++) {
+        CTxOut outReward;
+        libzerocoin::PrivateCoin coinReward(Params().Zerocoin_Params(), libzerocoin::CoinDenomination::ZQ_ONE);
+        if (!pwallet->CreateZPIVOutPut(libzerocoin::CoinDenomination::ZQ_ONE, coinReward, outReward))
+            return error("%s: failed to create zPIV output", __func__);
+        vout.emplace_back(outReward);
+    }
 
     return true;
 }
@@ -100,6 +127,12 @@ bool CZPivStake::GetTxFrom(CTransaction& tx)
     return false;
 }
 
+bool CZPivStake::MarkSpent(CWallet *pwallet)
+{
+    mint.SetUsed(true);
+    CWalletDB walletdb(pwallet->strWalletFile);
+    return walletdb.WriteZerocoinMint(mint);
+}
 
 //!PIV Stake
 bool CPivStake::SetInput(CTransaction txPrev, unsigned int n)
@@ -126,7 +159,7 @@ CAmount CPivStake::GetValue()
     return txFrom.vout[nPosition].nValue;
 }
 
-bool CPivStake::CreateTxOut(CWallet* pwallet, CTxOut& out)
+bool CPivStake::CreateTxOuts(CWallet* pwallet, vector<CTxOut>& vout)
 {
     vector<valtype> vSolutions;
     txnouttype whichType;
@@ -151,7 +184,7 @@ bool CPivStake::CreateTxOut(CWallet* pwallet, CTxOut& out)
     } else
         scriptPubKey = scriptPubKeyKernel;
 
-    out = CTxOut(0, scriptPubKey);
+    vout.emplace_back(CTxOut(0, scriptPubKey));
     return true;
 }
 
