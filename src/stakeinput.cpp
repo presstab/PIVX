@@ -11,7 +11,7 @@
 
 int CZPivStake::GetChecksumHeightFromMint()
 {
-    int nHeightChecksum = chainActive.Height() - 120;
+    int nHeightChecksum = chainActive.Height() - Params().Zerocoin_RequiredStakeDepth();
     nHeightChecksum -= (nHeightChecksum % 10);
 
     //Need to return the first occurance of this checksum in order for the validation process to identify a specific
