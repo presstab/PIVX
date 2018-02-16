@@ -283,13 +283,14 @@ bool stakeTargetHit(uint256 hashProofOfStake, int64_t nValueIn, uint256 bnTarget
     return (uint256(hashProofOfStake) < bnCoinDayWeight * bnTargetPerCoinDay);
 }
 
-bool CheckStake(const CDataStream& ssUniqueID, CAmount nValueIn, const uint64_t nStakeModifier, const uint256& bnTarget, unsigned int nTimeBlockFrom, unsigned int& nTimeTx, uint256& hashProofOfStake)
+bool CheckStake(const CDataStream& ssUniqueID, CAmount nValueIn, const uint64_t nStakeModifier, const uint256& bnTarget,
+                unsigned int nTimeBlockFrom, unsigned int& nTimeTx, uint256& hashProofOfStake)
 {
     CDataStream ss(SER_GETHASH, 0);
     ss << nStakeModifier << nTimeBlockFrom << ssUniqueID << nTimeTx;
     hashProofOfStake = Hash(ss.begin(), ss.end());
 
-    LogPrintf("%s: nTimeBlock=%d nTimeTx=%d modifier=%d\n", __func__, nTimeBlockFrom, nTimeTx, nStakeModifier);
+    //LogPrintf("%s: nTimeBlock=%d nTimeTx=%d modifier=%d\n", __func__, nTimeBlockFrom, nTimeTx, nStakeModifier);
 
     return stakeTargetHit(hashProofOfStake, nValueIn, bnTarget);
 }
@@ -335,6 +336,7 @@ bool Stake(CStakeInput* stakeInput, unsigned int nBits, unsigned int nTimeBlockF
             continue;
 
         fSuccess = true; // if we make it this far then we have successfully created a stake hash
+        //LogPrintf("%s: hashproof=%s\n", __func__, hashProofOfStake.GetHex());
         nTimeTx = nTryTime;
         break;
     }
@@ -392,13 +394,12 @@ bool CheckProofOfStake(const CBlock block, uint256& hashProofOfStake)
     if (!stakeInput->GetModifier(nStakeModifier))
         return error("%s failed to get modifier for stake input\n", __func__);
 
-    unsigned int nTimeTx = blockprev.nTime;
-    unsigned int nBlockTime = block.nTime;
-    if (!CheckStake(stakeInput->GetUniqueness(), stakeInput->GetValue(), nStakeModifier, bnTargetPerCoinDay, nTimeTx,
-                    nBlockTime, hashProofOfStake)) {
-
+    unsigned int nBlockFromTime = blockprev.nTime;
+    unsigned int nTxTime = block.nTime;
+    if (!CheckStake(stakeInput->GetUniqueness(), stakeInput->GetValue(), nStakeModifier, bnTargetPerCoinDay, nBlockFromTime,
+                    nTxTime, hashProofOfStake)) {
         return error("CheckProofOfStake() : INFO: check kernel failed on coinstake %s, hashProof=%s \n",
-                     tx.GetHash().ToString().c_str(), hashProofOfStake.ToString().c_str());
+                     tx.GetHash().GetHex(), hashProofOfStake.GetHex());
     }
 
     return true;

@@ -320,7 +320,7 @@ bool ValidateAccumulatorCheckpoint(const CBlock& block, CBlockIndex* pindex, Acc
     return true;
 }
 
-bool GenerateAccumulatorWitness(const PublicCoin &coin, Accumulator& accumulator, AccumulatorWitness& witness, int nSecurityLevel, int& nMintsAdded, string& strError)
+bool GenerateAccumulatorWitness(const PublicCoin &coin, Accumulator& accumulator, AccumulatorWitness& witness, int nSecurityLevel, int& nMintsAdded, string& strError, CBlockIndex* pindexCheckpoint)
 {
     uint256 txid;
     if (!zerocoinDB->ReadCoinMint(coin.getValue(), txid)) {
@@ -398,6 +398,8 @@ bool GenerateAccumulatorWitness(const PublicCoin &coin, Accumulator& accumulator
     int nChainHeight = chainActive.Height();
     int nHeightStop = nChainHeight % 10;
     nHeightStop = nChainHeight - nHeightStop - 20; // at least two checkpoints deep
+    if (pindexCheckpoint)
+        nHeightStop = pindexCheckpoint->nHeight -10;
     int nCheckpointsAdded = 0;
     nMintsAdded = 0;
     while (pindex->nHeight < nHeightStop + 1) {
