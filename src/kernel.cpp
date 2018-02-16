@@ -347,7 +347,7 @@ bool Stake(CStakeInput* stakeInput, unsigned int nBits, unsigned int nTimeBlockF
 }
 
 // Check kernel hash target and coinstake signature
-bool CheckProofOfStake(const CBlock block, uint256& hashProofOfStake)
+bool CheckProofOfStake(const CBlock block, uint256& hashProofOfStake, CStakeInput* stake)
 {
     const CTransaction tx = block.vtx[1];
     if (!tx.IsCoinStake())
@@ -357,11 +357,10 @@ bool CheckProofOfStake(const CBlock block, uint256& hashProofOfStake)
     const CTxIn& txin = tx.vin[0];
 
     //Construct the stakeinput object
-    CStakeInput* stakeInput;
     if (tx.IsZerocoinSpend()) {
         libzerocoin::CoinSpend spend = TxInToZerocoinSpend(txin);
         CZPivStake* zpivInput = new CZPivStake(spend);
-        stakeInput = zpivInput;
+        stake = zpivInput;
     } else {
         // First try finding the previous transaction in database
         uint256 hashBlock;
@@ -375,21 +374,12 @@ bool CheckProofOfStake(const CBlock block, uint256& hashProofOfStake)
 
         CPivStake* pivInput = new CPivStake();
         pivInput->SetInput(txPrev, txin.prevout.n);
-        stakeInput = pivInput;
+        stake = pivInput;
     }
 
-    CBlockIndex* pindex = stakeInput->GetIndexFrom();
+    CBlockIndex* pindex = stake->GetIndexFrom();
     if (!pindex)
         return error("%s: Failed to find the block index", __func__);
-
-    // Check for required zPIV depth
-    if (stakeInput->IsZPIV()) {
-        if (!pindex->nHeight)
-            return error("%s: zPIV stake block is 0", __func__);
-
-        if (chainActive.Height() - pindex->nHeight < Params().Zerocoin_RequiredStakeDepth())
-            return error("%s: zPIV stake does not have required confirmation depth", __func__);
-    }
 
     // Read block header
     CBlock blockprev;
@@ -400,12 +390,12 @@ bool CheckProofOfStake(const CBlock block, uint256& hashProofOfStake)
     bnTargetPerCoinDay.SetCompact(block.nBits);
 
     uint64_t nStakeModifier = 0;
-    if (!stakeInput->GetModifier(nStakeModifier))
+    if (!stake->GetModifier(nStakeModifier))
         return error("%s failed to get modifier for stake input\n", __func__);
 
     unsigned int nBlockFromTime = blockprev.nTime;
     unsigned int nTxTime = block.nTime;
-    if (!CheckStake(stakeInput->GetUniqueness(), stakeInput->GetValue(), nStakeModifier, bnTargetPerCoinDay, nBlockFromTime,
+    if (!CheckStake(stake->GetUniqueness(), stake->GetValue(), nStakeModifier, bnTargetPerCoinDay, nBlockFromTime,
                     nTxTime, hashProofOfStake)) {
         return error("CheckProofOfStake() : INFO: check kernel failed on coinstake %s, hashProof=%s \n",
                      tx.GetHash().GetHex(), hashProofOfStake.GetHex());

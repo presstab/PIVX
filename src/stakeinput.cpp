@@ -27,6 +27,14 @@ int CZPivStake::GetChecksumHeightFromSpend()
     return GetChecksumHeight(nChecksum, spend->getDenomination());
 }
 
+uint32_t CZPivStake::GetChecksum()
+{
+    if (spend)
+        return spend->getAccumulatorChecksum();
+
+    return 0;
+}
+
 // The zPIV block index is the first appearance of the accumulator checksum that was used in the spend
 // note that this also means when staking that this checksum should be from a block that is beyond 60 minutes old and
 // 100 blocks deep.

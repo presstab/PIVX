@@ -70,6 +70,7 @@ public:
     bool IsZPIV() { return true; }
     int GetChecksumHeightFromMint();
     int GetChecksumHeightFromSpend();
+    uint32_t GetChecksum();
 };
 
 class CPivStake : public CStakeInput
