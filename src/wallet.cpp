@@ -2088,15 +2088,17 @@ bool CWallet::SelectStakeCoins(std::list<CStakeInput*>& listInputs, CAmount nTar
 //    }
 
     //Add zPIV
-    CWalletDB walletdb(strWalletFile);
-    list<CZerocoinMint> listMints = walletdb.ListMintedCoins(true, true, true);
+    if (chainActive.Height() > Params().Zerocoin_Block_V2_Start()) {
+        CWalletDB walletdb(strWalletFile);
+        list<CZerocoinMint> listMints = walletdb.ListMintedCoins(true, true, true);
 
-    for (CZerocoinMint mint : listMints) {
-        if (mint.GetVersion() < CZerocoinMint::STAKABLE_VERSION)
-            continue;
-        if (mint.GetHeight() < chainActive.Height() - Params().Zerocoin_RequiredStakeDepth()) {
-            CZPivStake* input = new CZPivStake(mint);
-            listInputs.emplace_back(input);
+        for (CZerocoinMint mint : listMints) {
+            if (mint.GetVersion() < CZerocoinMint::STAKABLE_VERSION)
+                continue;
+            if (mint.GetHeight() < chainActive.Height() - Params().Zerocoin_RequiredStakeDepth()) {
+                CZPivStake *input = new CZPivStake(mint);
+                listInputs.emplace_back(input);
+            }
         }
     }
 
