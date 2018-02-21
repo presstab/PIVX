@@ -4693,10 +4693,11 @@ bool AcceptBlockHeader(const CBlock& block, CValidationState& state, CBlockIndex
 
 bool ContextualCheckZerocoinStake(CStakeInput* stake)
 {
+    if (chainActive.Height() + 1 < Params().Zerocoin_Block_V2_Start())
+        return error("%s: zPIV stake block is less than allowed start height", __func__);
+
     if (CZPivStake* zPIV = dynamic_cast<CZPivStake*>(stake)) {
         CBlockIndex* pindex = zPIV->GetIndexFrom();
-        if (!pindex || pindex->nHeight < Params().Zerocoin_Block_V2_Start())
-            return error("%s: zPIV stake block is less than allowed start height", __func__);
 
         if (chainActive.Height() - pindex->nHeight < Params().Zerocoin_RequiredStakeDepth())
             return error("%s: zPIV stake does not have required confirmation depth", __func__);
