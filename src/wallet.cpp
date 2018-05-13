@@ -264,7 +264,7 @@ bool CWallet::Unlock(const SecureString& strWalletPassphrase, bool anonymizeOnly
 
     CCrypter crypter;
     CKeyingMaterial vMasterKey;
-
+    bool fSuccess = false;
     {
         LOCK(cs_wallet);
         BOOST_FOREACH (const MasterKeyMap::value_type& pMasterKey, mapMasterKeys) {
@@ -274,11 +274,15 @@ bool CWallet::Unlock(const SecureString& strWalletPassphrase, bool anonymizeOnly
                 continue; // try another master key
             if (CCryptoKeyStore::Unlock(vMasterKey)) {
                 fWalletUnlockAnonymizeOnly = anonymizeOnly;
-                return true;
+                fSuccess = true;
+                break;
             }
         }
     }
-    return false;
+    if (!IsLocked() || fWalletUnlockAnonymizeOnly)
+        zwalletMain->SyncWithChain(true);
+
+    return fSuccess;
 }
 
 bool CWallet::ChangeWalletPassphrase(const SecureString& strOldWalletPassphrase, const SecureString& strNewWalletPassphrase)
@@ -5305,13 +5309,11 @@ bool CWallet::UpdateMint(const CBigNum& bnValue, const int& nHeight, const uint2
         meta.nHeight = nHeight;
         meta.txid = txid;
         return zpivTracker->UpdateState(meta);
-    } else {
-        //Check if this mint is one that is in our mintpool (a potential future mint from our deterministic generation)
-        if (zwalletMain->IsInMintPool(bnValue)) {
-            if (zwalletMain->SetMintSeen(bnValue, nHeight, txid, denom))
-                return true;
-        }
     }
+
+    //Check if this mint is one that is in our mintpool (a potential future mint from our deterministic generation)
+    if (zwalletMain->IsInMintPool(bnValue))
+        return zwalletMain->SetMintSeen(bnValue, nHeight, txid, denom);
 
     return false;
 }

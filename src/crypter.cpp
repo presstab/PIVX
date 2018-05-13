@@ -270,7 +270,6 @@ bool CCryptoKeyStore::Unlock(const CKeyingMaterial& vMasterKeyIn)
             uint256 seed = key.GetPrivKey_256();
             LogPrintf("%s: first run of zpiv wallet detected, new seed generated. Seedhash=%s\n", __func__, Hash(seed.begin(), seed.end()).GetHex());
             pwalletMain->zwalletMain->SetMasterSeed(seed, true);
-            pwalletMain->zwalletMain->GenerateMintPool();
         }
     }
 

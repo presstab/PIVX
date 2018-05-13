@@ -193,12 +193,19 @@ bool CzPIVTracker::HasPubcoin(const CBigNum &bnValue) const
     return HasPubcoinHash(hash);
 }
 
-bool CzPIVTracker::HasPubcoinHash(const uint256& hashPubcoin) const
+bool CzPIVTracker::HasPubcoinHash(const uint256& hashPubcoin, bool fCheckPartial) const
 {
     for (auto it : mapSerialHashes) {
         CMintMeta meta = it.second;
         if (meta.hashPubcoin == hashPubcoin)
             return true;
+    }
+
+    if (fCheckPartial) {
+        for (auto it : mapPartialMints) {
+            if (it.first == hashPubcoin)
+                return true;
+        }
     }
     return false;
 }
@@ -293,6 +300,9 @@ void CzPIVTracker::Add(const CDeterministicMint& dMint, bool isNew, bool isArchi
 
     if (isNew)
         CWalletDB(strWalletFile).WriteDeterministicMint(dMint);
+
+    if (mapPartialMints.count(meta.hashPubcoin))
+        mapPartialMints.erase(meta.hashPubcoin);
 }
 
 void CzPIVTracker::Add(const CZerocoinMint& mint, bool isNew, bool isArchived)
@@ -313,6 +323,20 @@ void CzPIVTracker::Add(const CZerocoinMint& mint, bool isNew, bool isArchived)
 
     if (isNew)
         CWalletDB(strWalletFile).WriteZerocoinMint(mint);
+}
+
+void CzPIVTracker::AddPartialMint(const CMintMeta& meta)
+{
+    mapPartialMints.insert(std::make_pair(meta.hashPubcoin, meta));
+}
+
+std::set<CMintMeta> CzPIVTracker::GetPartialMints() const
+{
+    std::set<CMintMeta> setMints;
+    for (auto it : mapPartialMints)
+        setMints.emplace(it.second);
+
+    return setMints;
 }
 
 void CzPIVTracker::SetPubcoinUsed(const uint256& hashPubcoin, const uint256& txid)

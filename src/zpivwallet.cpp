@@ -38,6 +38,14 @@ CzPIVWallet::CzPIVWallet(std::string strWalletFile)
         }
     }
 
+    //Initialize information about the last used count
+    nCountLastUsed = 0;
+    if (!walletdb.ReadZPIVCount(nCountLastUsed))
+        nCountLastUsed = 0;
+
+    //Set up mintpool
+    this->mintPool = CMintPool(nCountLastUsed);
+
     //Don't try to do anything if the wallet is locked.
     if (pwalletMain->IsLocked()) {
         seedMaster = 0;
@@ -64,29 +72,27 @@ CzPIVWallet::CzPIVWallet(std::string strWalletFile)
         LogPrintf("%s: failed to save deterministic seed for hashseed %s\n", __func__, hashSeed.GetHex());
         return;
     }
-    this->mintPool = CMintPool(nCountLastUsed);
 }
 
 bool CzPIVWallet::SetMasterSeed(const uint256& seedMaster, bool fResetCount)
 {
-
     CWalletDB walletdb(strWalletFile);
-    if (pwalletMain->IsLocked())
-        return false;
 
-    if (seedMaster != 0 && !pwalletMain->AddDeterministicSeed(seedMaster)) {
-        return error("%s: failed to set master seed.", __func__);
-    }
-
-    this->seedMaster = seedMaster;
-
+    //Initialize information about the last used count
     nCountLastUsed = 0;
-
     if (fResetCount)
         walletdb.WriteZPIVCount(nCountLastUsed);
     else if (!walletdb.ReadZPIVCount(nCountLastUsed))
         nCountLastUsed = 0;
 
+    // Need to be unlocked to set the seed
+    if (pwalletMain->IsLocked())
+        return false;
+
+    if (seedMaster != 0 && !pwalletMain->AddDeterministicSeed(seedMaster))
+        return error("%s: failed to set master seed.", __func__);
+
+    this->seedMaster = seedMaster;
     mintPool.Reset();
 
     return true;
@@ -105,7 +111,6 @@ void CzPIVWallet::AddToMintPool(const std::pair<uint256, uint32_t>& pMint, bool 
 //Add the next 20 mints to the mint pool
 void CzPIVWallet::GenerateMintPool(uint32_t nCountStart, uint32_t nCountEnd)
 {
-
     //Is locked
     if (seedMaster == 0)
         return;
@@ -156,11 +161,16 @@ void CzPIVWallet::GenerateMintPool(uint32_t nCountStart, uint32_t nCountEnd)
 // pubcoin hashes are stored to db so that a full accounting of mints belonging to the seed can be tracked without regenerating
 bool CzPIVWallet::LoadMintPoolFromDB()
 {
+    uint256 hashSeed;
+    if (!CWalletDB(strWalletFile).ReadCurrentSeedHash(hashSeed))
+        return false;
+
     map<uint256, vector<pair<uint256, uint32_t> > > mapMintPool = CWalletDB(strWalletFile).MapMintPool();
 
-    uint256 hashSeed = Hash(seedMaster.begin(), seedMaster.end());
-    for (auto& pair : mapMintPool[hashSeed])
-        mintPool.Add(pair);
+    if (mapMintPool.count(hashSeed)) {
+        for (auto& pair : mapMintPool.at(hashSeed))
+            mintPool.Add(pair);
+    }
 
     return true;
 }
@@ -184,6 +194,10 @@ void CzPIVWallet::SyncWithChain(bool fGenerateMintPool)
     bool found = true;
     CWalletDB walletdb(strWalletFile);
 
+    //If wallet is unlocked now, then fill in information about partial mints
+    if (!pwalletMain->IsLocked() || pwalletMain->fWalletUnlockAnonymizeOnly)
+        FinishPartialMints();
+
     set<uint256> setAddedTx;
     while (found) {
         found = false;
@@ -202,7 +216,7 @@ void CzPIVWallet::SyncWithChain(bool fGenerateMintPool)
             if (ShutdownRequested())
                 return;
 
-            if (pwalletMain->zpivTracker->HasPubcoinHash(pMint.first)) {
+            if (pwalletMain->zpivTracker->HasPubcoinHash(pMint.first, true)) {
                 mintPool.Remove(pMint.first);
                 continue;
             }
@@ -279,14 +293,22 @@ void CzPIVWallet::SyncWithChain(bool fGenerateMintPool)
     }
 }
 
-bool CzPIVWallet::SetMintSeen(const CBigNum& bnValue, const int& nHeight, const uint256& txid, const CoinDenomination& denom)
+// Add complete information to a mint that was only partially filled out because of locked wallet status
+void CzPIVWallet::FinishPartialMints()
 {
-    if (!mintPool.Has(bnValue))
-        return error("%s: value not in pool", __func__);
-    pair<uint256, uint32_t> pMint = mintPool.Get(bnValue);
+    std::set<CMintMeta> setPartialMints = pwalletMain->zpivTracker->GetPartialMints();
+    for (CMintMeta meta : setPartialMints) {
+        //The count is stored in the hashSerial spot. The hashSerial is not calculable yet, so irrelevant. This is easier than creating a new datatype.
+        uint32_t nCount = static_cast<uint32_t>(meta.hashSerial.Get32());
+        if (!AddDeterministicMint(meta, nCount))
+            LogPrintf("%s: failed to add pubcoinhash %s\n", __func__, meta.hashPubcoin.GetHex());
+    }
+}
 
+bool CzPIVWallet::AddDeterministicMint(CMintMeta meta, const uint32_t nCount)
+{
     // Regenerate the mint
-    uint512 seedZerocoin = GetZerocoinSeed(pMint.second);
+    uint512 seedZerocoin = GetZerocoinSeed(nCount);
     CBigNum bnValueGen;
     CBigNum bnSerial;
     CBigNum bnRandomness;
@@ -294,19 +316,19 @@ bool CzPIVWallet::SetMintSeen(const CBigNum& bnValue, const int& nHeight, const 
     SeedToZPIV(seedZerocoin, bnValueGen, bnSerial, bnRandomness, key);
 
     //Sanity check
-    if (bnValueGen != bnValue)
+    if (GetPubCoinHash(bnValueGen) != meta.hashPubcoin)
         return error("%s: generated pubcoin and expected value do not match!", __func__);
 
     // Create mint object and database it
     uint256 hashSeed = Hash(seedMaster.begin(), seedMaster.end());
     uint256 hashSerial = GetSerialHash(bnSerial);
-    uint256 hashPubcoin = GetPubCoinHash(bnValue);
+    uint256 hashPubcoin = GetPubCoinHash(bnValueGen);
     uint256 nSerial = bnSerial.getuint256();
     uint256 hashStake = Hash(nSerial.begin(), nSerial.end());
-    CDeterministicMint dMint(PrivateCoin::CURRENT_VERSION, pMint.second, hashSeed, hashSerial, hashPubcoin, hashStake);
-    dMint.SetDenomination(denom);
-    dMint.SetHeight(nHeight);
-    dMint.SetTxHash(txid);
+    CDeterministicMint dMint(PrivateCoin::CURRENT_VERSION, nCount, hashSeed, hashSerial, hashPubcoin, hashStake);
+    dMint.SetDenomination(meta.denom);
+    dMint.SetHeight(meta.nHeight);
+    dMint.SetTxHash(meta.txid);
 
     // Check if this is also already spent
     int nHeightTx;
@@ -327,16 +349,43 @@ bool CzPIVWallet::SetMintSeen(const CBigNum& bnValue, const int& nHeight, const 
 
     // Add to zpivTracker which also adds to database
     pwalletMain->zpivTracker->Add(dMint, true);
-    
+
     //Update the count if it is less than the mint's count
-    if (nCountLastUsed < pMint.second) {
+    if (nCountLastUsed < nCount) {
         CWalletDB walletdb(strWalletFile);
-        nCountLastUsed = pMint.second;
+        nCountLastUsed = nCount;
         walletdb.WriteZPIVCount(nCountLastUsed);
     }
 
+    return true;
+}
+
+bool CzPIVWallet::SetMintSeen(const CBigNum& bnValue, const int& nHeight, const uint256& txid, const CoinDenomination& denom)
+{
+    if (!mintPool.Has(bnValue))
+        return error("%s: value not in pool", __func__);
+    pair<uint256, uint32_t> pMint = mintPool.Get(bnValue);
+
+    CMintMeta meta;
+    meta.hashPubcoin = pMint.first;
+    meta.txid = txid;
+    meta.denom = denom;
+    meta.nHeight = nHeight;
+
+    // Cannot generate any additional information
+    if (pwalletMain->IsLocked() && !pwalletMain->fWalletUnlockAnonymizeOnly) {
+        //Use the hashSerial, which is not calculable, to store the count
+        meta.hashSerial = pMint.second;
+        pwalletMain->zpivTracker->AddPartialMint(meta);
+        mintPool.Remove(meta.hashPubcoin);
+        return true;
+    }
+
+    if (!AddDeterministicMint(meta, pMint.second))
+        return error("%s: failed to add mint\n", __func__);
+
     //remove from the pool
-    mintPool.Remove(dMint.GetPubcoinHash());
+    mintPool.Remove(meta.hashPubcoin);
 
     return true;
 }

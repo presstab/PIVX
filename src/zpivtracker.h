@@ -17,18 +17,21 @@ private:
     std::string strWalletFile;
     std::map<uint256, CMintMeta> mapSerialHashes;
     std::map<uint256, uint256> mapPendingSpends; //serialhash, txid of spend
+    std::map<uint256, CMintMeta> mapPartialMints; //pubcoinhash
     bool UpdateStatusInternal(const std::set<uint256>& setMempool, CMintMeta& mint);
 public:
     CzPIVTracker(std::string strWalletFile);
     ~CzPIVTracker();
     void Add(const CDeterministicMint& dMint, bool isNew = false, bool isArchived = false);
     void Add(const CZerocoinMint& mint, bool isNew = false, bool isArchived = false);
+    void AddPartialMint(const CMintMeta& meta);
     bool Archive(CMintMeta& meta);
     bool HasPubcoin(const CBigNum& bnValue) const;
-    bool HasPubcoinHash(const uint256& hashPubcoin) const;
+    bool HasPubcoinHash(const uint256& hashPubcoin, bool fCheckPartial = false) const;
     bool HasSerial(const CBigNum& bnSerial) const;
     bool HasSerialHash(const uint256& hashSerial) const;
     bool HasMintTx(const uint256& txid);
+    std::set<CMintMeta> GetPartialMints() const;
     bool IsEmpty() const { return mapSerialHashes.empty(); }
     void Init();
     CMintMeta Get(const uint256& hashSerial);

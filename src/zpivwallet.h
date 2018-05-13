@@ -24,10 +24,12 @@ private:
 public:
     CzPIVWallet(std::string strWalletFile);
 
+    bool AddDeterministicMint(CMintMeta meta, const uint32_t nCount);
     void AddToMintPool(const std::pair<uint256, uint32_t>& pMint, bool fVerbose);
     bool SetMasterSeed(const uint256& seedMaster, bool fResetCount = false);
     uint256 GetMasterSeed() { return seedMaster; }
     void SyncWithChain(bool fGenerateMintPool = true);
+    void FinishPartialMints();
     void GenerateDeterministicZPIV(libzerocoin::CoinDenomination denom, libzerocoin::PrivateCoin& coin, CDeterministicMint& dMint, bool fGenerateOnly = false);
     void GenerateMint(const uint32_t& nCount, const libzerocoin::CoinDenomination denom, libzerocoin::PrivateCoin& coin, CDeterministicMint& dMint);
     void GetState(int& nCount, int& nLastGenerated);
