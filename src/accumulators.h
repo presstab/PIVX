@@ -15,8 +15,27 @@
 
 class CBlockIndex;
 
+class CoinWitnessData
+{
+public:
+    std::unique_ptr<libzerocoin::PublicCoin> coin;
+    std::unique_ptr<libzerocoin::Accumulator> pAccumulator;
+    std::unique_ptr<libzerocoin::AccumulatorWitness> pWitness;
+    libzerocoin::CoinDenomination denom;
+    int nHeightCheckpoint;
+    int nHeightMintAdded;
+    int nHeightAccStart;
+    int nMintsAdded;
+    uint256 txid;
+    bool isV1;
+
+    CoinWitnessData();
+    void SetHeightMintAdded(int nHeight);
+  //  CoinWitnessData(CoinWitnessData&);
+};
+
 std::map<libzerocoin::CoinDenomination, int> GetMintMaturityHeight();
-bool GenerateAccumulatorWitness(const libzerocoin::PublicCoin &coin, libzerocoin::Accumulator& accumulator, libzerocoin::AccumulatorWitness& witness, int nSecurityLevel, int& nMintsAdded, std::string& strError, CBlockIndex* pindexCheckpoint = nullptr);
+bool GenerateAccumulatorWitness(std::list<std::unique_ptr<CoinWitnessData> >& listCoinWitness, AccumulatorMap& mapAccumulators, int nSecurityLevel, string& strError, CBlockIndex* pindexCheckpoint);
 bool GetAccumulatorValueFromDB(uint256 nCheckpoint, libzerocoin::CoinDenomination denom, CBigNum& bnAccValue);
 bool GetAccumulatorValueFromChecksum(uint32_t nChecksum, bool fMemoryOnly, CBigNum& bnAccValue);
 void AddAccumulatorChecksum(const uint32_t nChecksum, const CBigNum &bnValue, bool fMemoryOnly);
@@ -28,6 +47,7 @@ uint32_t ParseChecksum(uint256 nChecksum, libzerocoin::CoinDenomination denomina
 uint32_t GetChecksum(const CBigNum &bnValue);
 int GetChecksumHeight(uint32_t nChecksum, libzerocoin::CoinDenomination denomination);
 bool InvalidCheckpointRange(int nHeight);
+void RandomizeSecurityLevel(int& nSecurityLevel);
 bool ValidateAccumulatorCheckpoint(const CBlock& block, CBlockIndex* pindex, AccumulatorMap& mapAccumulators);
 
 #endif //PIVX_ACCUMULATORS_H
