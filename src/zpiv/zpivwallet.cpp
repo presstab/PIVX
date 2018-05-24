@@ -8,7 +8,7 @@
 #include "walletdb.h"
 #include "init.h"
 #include "wallet.h"
-#include "primitives/deterministicmint.h"
+#include "deterministicmint.h"
 
 using namespace libzerocoin;
 

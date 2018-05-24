@@ -7,8 +7,8 @@
 
 #include "main.h"
 
-#include "accumulators.h"
-#include "accumulatormap.h"
+#include "zpiv/accumulators.h"
+#include "zpiv/accumulatormap.h"
 #include "addrman.h"
 #include "alert.h"
 #include "blocksignature.h"
@@ -34,7 +34,7 @@
 #include "utilmoneystr.h"
 #include "validationinterface.h"
 
-#include "primitives/zerocoin.h"
+#include "zpiv/zerocoin.h"
 #include "libzerocoin/Denominations.h"
 #include "invalid.h"
 

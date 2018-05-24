@@ -8,34 +8,16 @@
 #include "libzerocoin/Accumulator.h"
 #include "libzerocoin/Coin.h"
 #include "libzerocoin/Denominations.h"
-#include "primitives/zerocoin.h"
+#include "zerocoin.h"
 #include "accumulatormap.h"
 #include "chain.h"
 #include "uint256.h"
+#include "witness.h"
 
 class CBlockIndex;
 
-class CoinWitnessData
-{
-public:
-    std::unique_ptr<libzerocoin::PublicCoin> coin;
-    std::unique_ptr<libzerocoin::Accumulator> pAccumulator;
-    std::unique_ptr<libzerocoin::AccumulatorWitness> pWitness;
-    libzerocoin::CoinDenomination denom;
-    int nHeightCheckpoint;
-    int nHeightMintAdded;
-    int nHeightAccStart;
-    int nMintsAdded;
-    uint256 txid;
-    bool isV1;
-
-    CoinWitnessData();
-    void SetHeightMintAdded(int nHeight);
-  //  CoinWitnessData(CoinWitnessData&);
-};
-
 std::map<libzerocoin::CoinDenomination, int> GetMintMaturityHeight();
-bool GenerateAccumulatorWitness(CoinWitnessData* coinWitness, AccumulatorMap& mapAccumulators, int nSecurityLevel, string& strError, CBlockIndex* pindexCheckpoint);
+bool GenerateAccumulatorWitness(CoinWitnessData* coinWitness, AccumulatorMap& mapAccumulators, int nSecurityLevel, CBlockIndex* pindexCheckpoint);
 bool GetAccumulatorValueFromDB(uint256 nCheckpoint, libzerocoin::CoinDenomination denom, CBigNum& bnAccValue);
 bool GetAccumulatorValueFromChecksum(uint32_t nChecksum, bool fMemoryOnly, CBigNum& bnAccValue);
 void AddAccumulatorChecksum(const uint32_t nChecksum, const CBigNum &bnValue, bool fMemoryOnly);

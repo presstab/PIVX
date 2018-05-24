@@ -14,8 +14,8 @@
 #include "txdb.h"
 #include "util.h"
 #include "utilmoneystr.h"
-#include "accumulatormap.h"
-#include "accumulators.h"
+#include "zpiv/accumulatormap.h"
+#include "zpiv/accumulators.h"
 
 #include <stdint.h>
 #include <univalue.h>
