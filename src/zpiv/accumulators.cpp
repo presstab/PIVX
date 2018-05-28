@@ -329,21 +329,6 @@ bool ValidateAccumulatorCheckpoint(const CBlock& block, CBlockIndex* pindex, Acc
     return true;
 }
 
-void RandomizeSecurityLevel(int& nSecurityLevel)
-{
-    //security level: this is an important prevention of tracing the coins via timing. Security level represents how many checkpoints
-    //of accumulated coins are added *beyond* the checkpoint that the mint being spent was added too. If each spend added the exact same
-    //amounts of checkpoints after the mint was accumulated, then you could know the range of blocks that the mint originated from.
-    if (nSecurityLevel < 100) {
-        //add some randomness to the user's selection so that it is not always the same
-        nSecurityLevel += CBigNum::randBignum(30).getint();
-
-        //security level 100 represents adding all available coins that have been accumulated - user did not select this
-        if (nSecurityLevel >= 100)
-            nSecurityLevel = 99;
-    }
-}
-
 //Compute how many coins were added to an accumulator up to the end height
 int ComputeAccumulatedCoins(int nHeightEnd, libzerocoin::CoinDenomination denom)
 {
@@ -435,7 +420,7 @@ void AccumulateRange(CoinWitnessData* coinWitness, int nHeightEnd)
     }
 }
 
-bool GenerateAccumulatorWitness(CoinWitnessData* coinWitness, AccumulatorMap& mapAccumulators, int nSecurityLevel, CBlockIndex* pindexCheckpoint)
+bool GenerateAccumulatorWitness(CoinWitnessData* coinWitness, AccumulatorMap& mapAccumulators, CBlockIndex* pindexCheckpoint)
 {
     int nLockAttempts = 0;
     while (nLockAttempts < 100) {
@@ -491,11 +476,7 @@ bool GenerateAccumulatorWitness(CoinWitnessData* coinWitness, AccumulatorMap& ma
         nHeightStop -= nHeightStop % 10;
         LogPrintf("%s: using checkpoint height %d\n", __func__, pindexCheckpoint->nHeight);
     } else {
-        RandomizeSecurityLevel(nSecurityLevel);
-        nHeightStop = coinWitness->nHeightAccStart + nSecurityLevel * CBigNum::randBignum(100).getint();
-        nHeightStop = std::min(nHeightStop, nHeightMax);
-        if (nSecurityLevel == 100)
-            nHeightStop = nSecurityLevel;
+        nHeightStop = nHeightMax;
     }
 
     AccumulateRange(coinWitness, nHeightStop - 1);
