@@ -754,6 +754,7 @@ void CWallet::EraseFromWallet(const uint256& hash)
         LOCK(cs_wallet);
         if (mapWallet.erase(hash))
             CWalletDB(strWalletFile).EraseTx(hash);
+        LogPrintf("%s: Erased wtx %s from wallet\n", __func__, hash.GetHex());
     }
     return;
 }
@@ -1539,9 +1540,10 @@ int CWallet::ScanForWalletTransactions(CBlockIndex* pindexStart, bool fUpdate)
     return ret;
 }
 
-void CWallet::ReacceptWalletTransactions()
+void CWallet::ReacceptWalletTransactions(bool fFirstLoad)
 {
     LOCK2(cs_main, cs_wallet);
+    std::set<uint256> setErase;
     BOOST_FOREACH (PAIRTYPE(const uint256, CWalletTx) & item, mapWallet) {
         const uint256& wtxid = item.first;
         CWalletTx& wtx = item.second;
@@ -1552,8 +1554,18 @@ void CWallet::ReacceptWalletTransactions()
         if (!wtx.IsCoinBase() && !wtx.IsCoinStake() && nDepth < 0) {
             // Try to add to memory pool
             LOCK(mempool.cs);
-            wtx.AcceptToMemoryPool(false);
+            bool fSuccess = wtx.AcceptToMemoryPool(false);
+            if (!fSuccess && fFirstLoad && GetTime() - wtx.GetTxTime() > 12*60*60) {
+                //First load of wallet, failed to accept to mempool, and older than 12 hours... not likely to ever
+                //make it in to mempool
+                setErase.emplace(wtxid);
+            }
         }
+    }
+
+    for (const uint256& txid : setErase) {
+        //todo : probably better to AbandonTransaction. Cherry-pick fd4bd5009eed5235c9afb6dc2e7e095a8bdd8c0b
+        EraseFromWallet(txid);
     }
 }
 
